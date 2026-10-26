@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ASIS 원본 보관함</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div id="unsupported" hidden role="alert">
+  <div>
+    <h1>지원하지 않는 브라우저입니다</h1>
+    <p>이 도구는 Chrome 또는 Edge에서만 사용할 수 있습니다. Chrome 또는 Edge로 이 파일을 다시 열어 주세요.</p>
+    <p id="closeMsg"></p>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></svg>
+      <span>ASIS 원본 보관함</span>
+    </div>
+    <span class="vsep" aria-hidden="true"></span>
+    <nav class="crumb" id="crumb" aria-label="현재 위치"></nav>
+    <span class="sp"></span>
+    <button type="button" id="btnResume" class="btn btn-s btn-primary" hidden></button>
+    <button type="button" id="btnFont" class="btn btn-s btn-ghost" title="글꼴 설정">글꼴</button>
+    <button type="button" id="btnPick" class="btn btn-s">루트 폴더 선택</button>
+    <button type="button" id="btnReport" class="btn btn-s btn-primary" disabled>보고서 만들기</button>
+  </header>
+
+  <aside class="side" aria-label="화면 목록">
+    <div class="search-row">
+      <select id="stFilter" class="stf" aria-label="상태 필터 (검색도 이 상태 안에서)">
+        <option value="all">전체</option><option value="0">요청</option><option value="1">진행</option><option value="2">개발</option><option value="3">운영</option>
+    </select>
+    <label class="search">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input type="search" id="q" placeholder="화면명 · 티켓 · 작업자 · SQL" aria-label="화면 검색 (화면명, 티켓, 작업자, 메모·SQL 내용)">
+    </label>
+    </div>
+    <ul class="tree" id="tree" role="tree" aria-label="화면 트리" title="우클릭: 메뉴 추가 · 이름 변경 · 이동"></ul>
+    <div class="side-foot">
+      <div class="pf"><span>운영 반영</span><b id="gtxt">0 / 0 · 0%</b></div>
+      <div id="gauge" class="gauge" role="progressbar" aria-label="운영 반영률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="gfill"></i></div>
+    </div>
+  </aside>
+
+  <main id="main"></main>
+  <aside class="rside" id="rside" hidden aria-label="메모와 첨부"></aside>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<!-- 처리 중: 작업이 끝날 때까지 화면 전체를 막음 (js/dialog.js withBusy) -->
+<div id="busy" class="busy" hidden aria-busy="true"><div class="busy-box" role="status" aria-live="assertive"><span class="spin" aria-hidden="true"></span><span id="busyMsg">처리 중…</span></div></div>
+<div id="ctx" hidden role="menu"></div>
+
+<!-- 앱 전용 입력 창 (prompt 대체) -->
+<div id="dlg" class="overlay" hidden><div class="mbox" role="dialog" aria-labelledby="dlgTitle">
+  <h3 id="dlgTitle"></h3>
+  <p class="hint" id="dlgDesc"></p>
+  <label class="f" for="dlgInput" id="dlgLabel"></label>
+  <input type="text" id="dlgInput" class="inp" autocomplete="off">
+  <p class="err" id="dlgErr" hidden role="alert"></p>
+  <p class="hint" id="dlgHint"></p>
+  <label class="chk" id="dlgCheckRow" hidden><input type="checkbox" id="dlgCheck"><span id="dlgCheckText"></span></label>
+  <div class="mbar"><button type="button" class="btn btn-s" id="dlgCancel">취소</button><button type="button" class="btn btn-s btn-primary" id="dlgOk">확인</button></div>
+</div></div>
+
+<div id="modal" class="overlay" hidden><div class="mbox" role="dialog" aria-label="보고서 만들기">
+  <h3>고객 전달용 보고서 만들기</h3>
+  <label class="f" for="rpTitle">보고서 제목</label><input type="text" id="rpTitle" class="inp">
+  <label class="f" for="rpScope">포함할 화면</label>
+  <select id="rpScope" class="inp"><option value="prod">운영 완료 화면만 (고객 전달용)</option><option value="dev">개발 이상</option><option value="all">전체</option></select>
+  <p class="hint" style="margin-top:12px">등록된 내용만 반영됩니다. 보고서는 새 탭에 열리고 루트 폴더의 .reports 폴더에도 저장됩니다. 새 탭에서 인쇄(Ctrl+P) → PDF로 저장하면 산출물로 제출할 수 있습니다.</p>
+  <div class="mbar"><button type="button" class="btn btn-s" id="rpCancel">취소</button><button type="button" class="btn btn-s btn-primary" id="rpGo">보고서 생성</button></div>
+</div></div>
+
+<div id="fontModal" class="overlay" hidden><div class="mbox" role="dialog" aria-label="글꼴 설정">
+  <h3>글꼴 설정</h3>
+  <p class="hint">이 PC에 설치된 글꼴만 목록에 나타납니다. 인터넷 없이 시스템 글꼴로만 동작합니다.</p>
+  <label class="f" for="fUi">화면 글꼴</label><select id="fUi" class="inp"></select>
+  <label class="f" for="fCode">SQL 편집기 글꼴</label><select id="fCode" class="inp"></select>
+  <div class="fprev"><div id="fPrevUi">기존 SQL · 신규 SQL 등록 ✓ 0123456789 ABC abc</div><pre id="fPrevCode">SELECT EMP_NO, EMP_NM FROM EMP WHERE DEPT_CD = 'D100'; -- 사원 조회</pre></div>
+  <div class="mbar"><button type="button" class="btn btn-s" id="fCancel">취소</button><button type="button" class="btn btn-s btn-primary" id="fOk">적용</button></div>
+</div></div>
+
+<div id="moveModal" class="overlay" hidden><div class="mbox" role="dialog" aria-label="메뉴 이동">
+  <h3>메뉴 이동</h3>
+  <p class="hint" id="mvInfo"></p>
+  <div id="mvList" class="mvlist" role="listbox"></div>
+  <p class="hint" id="mvSel"></p>
+  <div class="mbar"><button type="button" class="btn btn-s" id="mvCancel">취소</button><button type="button" class="btn btn-s btn-primary" id="mvOk" disabled>이동</button></div>
+</div></div>
+
+<div id="diffModal" class="overlay" hidden><div class="mbox wide" role="dialog" aria-labelledby="dfTitle">
+  <h3 id="dfTitle">기존과 비교</h3>
+  <div class="dfhead"><label class="f" for="dfA" id="dfALabel">비교할 기존 SQL</label><select id="dfA" class="inp"></select><span class="hint" id="dfHint"></span><span class="sp"></span><label class="opt-check" title="띄어쓰기·들여쓰기·줄바꿈과 대소문자 차이는 변경으로 보지 않습니다."><input type="checkbox" data-ignore-format>공백·대소문자 무시</label></div>
+  <div class="dfbody cmp" id="dfBody"></div>
+  <div class="mbar"><button type="button" class="btn btn-s" id="dfClose">닫기</button></div>
+</div></div>
+
+<!-- 스크립트 순서가 중요합니다 (README 의 "코드 규칙" 참고)
+     라이브러리 → 기반(상수·상태·유틸·설정·파일) → 기능 → main(시작, 맨 마지막) -->
+<script src="js/vendor/ace-bundle.js"></script>
+<script src="js/constants.js"></script>
+<script src="js/state.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/fs.js"></script>
+<script src="js/screen-data.js"></script>
+<script src="js/sql.js"></script>
+<script src="js/dialog.js"></script>
+<script src="js/migrate.js"></script>
+<script src="js/tree.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/diff.js"></script>
+<script src="js/screen.js"></script>
+<script src="js/screen-blocks.js"></script>
+<script src="js/screen-files.js"></script>
+<script src="js/screen-save.js"></script>
+<script src="js/report.js"></script>
+<script src="js/fonts.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

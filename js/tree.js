@@ -21,23 +21,24 @@ const isFiltering = () => !!treeState.query || app.statusFilter !== null;
 
 /** 접어 둔 폴더 목록 저장 */
 const saveClosedFolders = () => {
-  if (app.root) settings.setQuietly(SETTING_KEYS.closedFolders(app.root.name), [...treeState.closedKeys]);
+  if (app.project) settings.setQuietly(SETTING_KEYS.closedFolders(app.project.id), [...treeState.closedKeys]);
 };
 
 /* ======================= 루트 폴더 ======================= */
 
-/** 루트 폴더 열기: 설정 저장 → 파일 구조 변환 → 트리 그리기 → 현황 화면 */
+/**
+ * 고른 프로젝트의 폴더를 루트로 설정: 접힘 상태 불러오기 → 파일 구조 변환 → 트리 그리기 → 현황 화면
+ * 프로젝트 등록·전환은 js/project.js 에서 하고, 여기서는 폴더가 정해진 뒤의 일만 합니다.
+ */
 async function setRootFolder(handle) {
-  await withBusy('루트 폴더를 여는 중… (파일 구조 확인 포함)', async () => {
+  await withBusy('프로젝트를 여는 중… (파일 구조 확인 포함)', async () => {
     app.root = handle;
-    await settings.set(SETTING_KEYS.root, handle);
-    $('#btnResume').hidden = true;
     $('#btnReport').disabled = false;
     app.screen = null;
     app.statusFilter = null;
     app.notice = '';
     try {
-      treeState.closedKeys = new Set((await settings.get(SETTING_KEYS.closedFolders(handle.name))) || []);
+      treeState.closedKeys = new Set((app.project && await settings.get(SETTING_KEYS.closedFolders(app.project.id))) || []);
     } catch {
       treeState.closedKeys = new Set();
     }
@@ -49,40 +50,6 @@ async function setRootFolder(handle) {
     await renderTree();
   });
   showHome();
-}
-
-/** [루트 폴더 선택] 버튼 */
-async function pickRootFolder() {
-  if (!(await confirmLeaveScreen())) return;
-  try {
-    await setRootFolder(await showDirectoryPicker({mode: 'readwrite', id: 'asis-keeper'}));
-  } catch (error) {
-    if (error.name !== 'AbortError') toastError('폴더를 선택하지 못했습니다', error);   // 사용자가 취소한 경우는 알리지 않음
-  }
-}
-
-/** ["○○" 이어서 열기] 버튼: 브라우저가 권한을 다시 물어봄 */
-async function resumeRootFolder() {
-  const handle = $('#btnResume').savedHandle;
-  if ((await handle.requestPermission({mode: 'readwrite'})) === 'granted') await setRootFolder(handle);
-  else toast('폴더 접근 권한이 허용되지 않았습니다.');
-}
-
-/** 시작할 때: 지난번 루트 폴더 권한이 살아 있으면 바로 열고, 아니면 "이어서 열기" 버튼을 보여 줌 */
-async function restoreLastRoot() {
-  try {
-    const handle = await settings.get(SETTING_KEYS.root);
-    if (!handle) return;
-    if ((await handle.queryPermission({mode: 'readwrite'})) === 'granted') {
-      await setRootFolder(handle);
-      return;
-    }
-    const button = $('#btnResume');
-    button.savedHandle = handle;
-    button.textContent = '"' + handle.name + '" 이어서 열기';
-    button.hidden = false;
-    showHome();
-  } catch { /* 저장된 값이 없거나 읽을 수 없으면 처음 화면 그대로 */ }
 }
 
 /** 현황(대시보드)으로 가기 — 등록 안 한 변경이 있으면 먼저 확인 */
@@ -97,11 +64,11 @@ async function goHome() {
 function renderBreadcrumb() {
   const crumb = $('#crumb');
   if (!app.root) {
-    crumb.innerHTML = '<span class="muted">루트 폴더가 선택되지 않았습니다</span>';
+    crumb.innerHTML = '<span class="muted">프로젝트가 열려 있지 않습니다</span>';
     return;
   }
   const parts = app.screen ? app.screen.path : [];
-  crumb.innerHTML = `<button type="button" class="crumb-root mono" title="현황 보기">${escapeHtml(app.root.name)}</button>`
+  crumb.innerHTML = `<button type="button" class="crumb-root mono" title="현황 보기">${escapeHtml(rootLabel())}</button>`
     + parts.map((part, i) => `<span class="sep" aria-hidden="true">›</span><span${i === parts.length - 1 ? ' class="here"' : ''}>${escapeHtml(part)}</span>`).join('');
 }
 
@@ -159,8 +126,10 @@ function toggleTreeNode(item, open) {
  */
 function createTreeItem({dir, parentDir, name, path, meta, statusIndex, childList, childScreenCount}) {
   const key = path.join('/');
-  const isFolder = childList.children.length > 0;
-  const isClosed = isFolder && !isFiltering() && treeState.closedKeys.has(key);
+  const isScreen = !!meta;                             // meta.json 이 있으면 화면(페이지), 없으면 메뉴를 묶는 폴더
+  const hasChildren = childList.children.length > 0;
+  const isFolder = !isScreen || hasChildren;           // 묶음 폴더는 비어 있어도 폴더로 보여 줌
+  const isClosed = hasChildren && !isFiltering() && treeState.closedKeys.has(key);
 
   const item = document.createElement('li');
   item.dataset.key = key;
@@ -171,13 +140,15 @@ function createTreeItem({dir, parentDir, name, path, meta, statusIndex, childLis
   node.tabIndex = 0;
   node.setAttribute('role', 'treeitem');
   node.style.paddingLeft = (8 + (path.length - 1) * 22) + 'px';
-  if (isFolder) node.setAttribute('aria-expanded', String(!isClosed));
-  node.title = path.join(' / ') + (statusIndex >= 0 ? ' · ' + STATUS_LIST[statusIndex] : '');   // 폴더 자신의 상태는 여기서 확인
-  const caret = isFolder ? `<span class="tw">${ICON.caret}</span>` : '';
-  const trailing = isFolder
+  if (hasChildren) node.setAttribute('aria-expanded', String(!isClosed));
+  node.title = path.join(' / ')
+    + (isScreen ? (statusIndex >= 0 ? ' · ' + STATUS_LIST[statusIndex] : '') : ' · 폴더 (메뉴 묶음)');
+  const caret = hasChildren ? `<span class="tw">${ICON.caret}</span>` : '';
+  const folderIcon = isScreen ? '' : ICON.folder;      // 화면과 폴더를 한눈에 구분
+  const trailing = hasChildren
     ? (childScreenCount ? `<span class="cnt">${childScreenCount}</span>` : '')
     : (statusIndex >= 0 ? `<i class="dot s${statusIndex}" aria-label="${STATUS_LIST[statusIndex]}"></i>` : '');
-  node.innerHTML = caret + `<span class="nm">${escapeHtml(name)}</span>` + trailing;
+  node.innerHTML = caret + folderIcon + `<span class="nm">${escapeHtml(name)}</span>` + trailing;
   if (app.screen && isSamePath(app.screen.path, path)) node.classList.add('sel');
 
   // 화면(meta 있음)은 열고, 화면이 아닌 폴더는 접고 펼침. ▾ 는 언제나 접고 펼침
@@ -193,7 +164,7 @@ function createTreeItem({dir, parentDir, name, path, meta, statusIndex, childLis
   };
   node.oncontextmenu = e => {
     e.preventDefault();
-    showFolderMenu({x: e.clientX, y: e.clientY}, {dir, parent: parentDir, name, path});
+    showFolderMenu({x: e.clientX, y: e.clientY}, {dir, parent: parentDir, name, path, isScreen});
   };
 
   item.append(node);
@@ -287,27 +258,75 @@ function renderStatusSummary() {
 /* ======================= 폴더 메뉴 ======================= */
 
 /** 폴더 위치를 "루트 › 인사 › 사원조회" 형태로 */
-const describeLocation = path => [app.root.name, ...path].join(' › ');
+const describeLocation = path => [rootLabel(), ...path].join(' › ');
 
 /**
  * 우클릭 메뉴
- * @param {{dir, parent, name, path}} target parent 가 null 이면 루트
+ * @param {{dir, parent, name, path, isScreen}} target
+ *   parent 가 null 이면 루트, isScreen 이 true 면 화면(메뉴)
+ *   화면은 그 자체가 내용을 담는 페이지이므로 그 아래에는 아무것도 넣을 수 없습니다 (담을 수 있는 것은 폴더와 루트뿐)
  */
 function showFolderMenu(position, target) {
-  const items = [['하위 메뉴 추가', () => addSubMenu(target)], ['폴더 경로 복사', () => copyFolderPath(target)]];
-  if (target.parent) items.push(['메뉴 이동', () => openMoveDialog(target)], ['이름 변경', () => renameMenuFolder(target)]);
-  else items.push(['루트 경로 다시 설정', () => copyFolderPath(target, true)]);
+  const items = [];
+  // 담는 것(폴더)을 먼저, 담기는 것(화면)을 다음에
+  if (!target.isScreen) {
+    items.push(
+      ['하위 폴더 추가', () => addSubFolder(target), '', MENU_ICON.folderAdd],
+      ['하위 메뉴 추가', () => addSubMenu(target), '', MENU_ICON.pageAdd]
+    );
+  }
+  items.push(['탐색기 경로 복사', () => copyFolderPath(target), '', MENU_ICON.clipboard]);
+  if (target.parent) {
+    // 복사는 화면(메뉴)만. 폴더는 묶음이라 통째로 복제할 일이 없고, 이동 이름도 '폴더 이동'으로 구분합니다.
+    if (target.isScreen) items.push(['메뉴 복사', () => openMoveDialog(target, 'copy'), '', MENU_ICON.copy]);
+    items.push(
+      [(target.isScreen ? '메뉴' : '폴더') + ' 이동', () => openMoveDialog(target, 'move'), '', MENU_ICON.move],
+      ['이름 변경', () => renameMenuFolder(target), '', MENU_ICON.rename]
+    );
+  } else {
+    items.push(['루트 경로 다시 설정', () => copyFolderPath(target, true), '', MENU_ICON.settings]);
+  }
   showMenu(position, items);
 }
 
-/** 하위 메뉴(화면 폴더) 추가 */
+/**
+ * 하위 폴더(메뉴 묶음) 추가
+ * meta.json 을 만들지 않습니다 — 그래서 본문에 입력하는 화면이 없고, 눌러도 열고 닫기만 합니다.
+ * 화면으로 쓸 것은 addSubMenu() 로 만듭니다.
+ */
+async function addSubFolder(target) {
+  const answer = await askText({
+    title: '하위 폴더 추가',
+    desc: '위치: ' + describeLocation(target.path),
+    label: '폴더 이름',
+    okText: '추가',
+    hint: '폴더는 메뉴를 묶어 두는 칸입니다. 본문에 입력하는 화면이 없고, 눌러도 열고 닫기만 합니다.'
+      + ' 특수문자 \\ / : * ? " < > | 와 asis, tobe 같은 예약어는 쓸 수 없습니다.',
+    validate: name => !name ? '이름을 입력하세요.' : validateFolderName(name)
+  });
+  if (!answer) return;
+  if (await hasSubDir(target.dir, answer.value)) return toast('같은 이름의 폴더가 이미 있습니다.');
+  try {
+    await withBusy('폴더를 만드는 중…', async () => {
+      await target.dir.getDirectoryHandle(answer.value, {create: true});
+      treeState.closedKeys.delete(target.path.join('/'));   // 새 폴더가 보이도록 상위 폴더를 펼침
+      await renderTree();
+    });
+    toast('폴더를 만들었습니다.');
+  } catch (error) {
+    toastError('폴더 생성 실패', error);
+  }
+}
+
+/** 하위 메뉴(화면 폴더) 추가 — meta.json 을 만들므로 본문에 화면이 열립니다 */
 async function addSubMenu(target) {
   const answer = await askText({
     title: '하위 메뉴 추가',
     desc: '위치: ' + describeLocation(target.path),
-    label: '메뉴(폴더) 이름',
+    label: '메뉴(화면) 이름',
     okText: '추가',
-    hint: '특수문자 \\ / : * ? " < > | 와 asis, tobe 같은 예약어는 쓸 수 없습니다.',
+    hint: '본문에서 SQL·파일·정의서를 입력하는 화면이 만들어집니다. 묶음만 필요하면 ‘하위 폴더 추가’를 쓰세요.'
+      + ' 특수문자 \\ / : * ? " < > | 와 asis, tobe 같은 예약어는 쓸 수 없습니다.',
     check: '만든 뒤 바로 열기',
     checked: true,
     validate: name => !name ? '이름을 입력하세요.' : validateFolderName(name)
@@ -380,54 +399,176 @@ async function renameMenuFolder(target) {
   }
 }
 
-/** 옮길 수 있는 위치 목록 (옮길 폴더 자신과 그 아래는 제외) */
+/* ======================= 메뉴 복사 ======================= */
+
+/* 복사한 폴더 이름 뒤에 붙이는 말. 같은 이름이 또 있으면 _COPY2, _COPY3 … 으로 늘립니다. */
+const COPY_NAME_SUFFIX = '_COPY';
+/* 이름 뒤 숫자를 몇까지 시도할지 */
+const MAX_COPY_NAME_TRIES = 99;
+
+/**
+ * 복사한 폴더에 쓸 이름 ('사원조회' → '사원조회_COPY', 이미 있으면 '사원조회_COPY2' …)
+ * @returns {Promise<string>} 빈 문자열이면 쓸 수 있는 이름을 찾지 못함
+ */
+async function uniqueCopyName(destDir, baseName) {
+  const firstName = baseName + COPY_NAME_SUFFIX;
+  if (!(await hasSubDir(destDir, firstName))) return firstName;
+  for (let number = 2; number <= MAX_COPY_NAME_TRIES; number++) {
+    const name = firstName + number;
+    if (!(await hasSubDir(destDir, name))) return name;
+  }
+  return '';
+}
+
+/**
+ * 복사한 폴더(하위 포함) 안의 모든 화면에서 작업 기록을 지움 — 내용만 가져올 때 씀
+ * 상태는 '요청'으로 돌리고, 상태 이력은 새로 시작하고, ASIS 잠금·해시·잠금 해제 이력은 지웁니다.
+ * (원본의 등록 기록이 복사본에도 남으면 현황 집계와 보고서가 같은 작업을 두 번 센 것처럼 보이기 때문)
+ */
+async function resetCopiedWorkLog(dir) {
+  const meta = await readJson(dir, 'meta.json', null);
+  if (meta) {
+    const now = new Date();
+    const cleaned = {...meta, status: STATUS_LIST[0], createdAt: now.toLocaleString('ko-KR'),
+      statusLog: [{status: STATUS_LIST[0], at: now.toISOString()}]};
+    for (const key of ['asisLocked', 'asisSavedAt', 'hashes', 'asisUnlockLog']) delete cleaned[key];
+    await writeJson(dir, 'meta.json', cleaned);
+  }
+  for (const name of await listChildFolders(dir)) await resetCopiedWorkLog(await dir.getDirectoryHandle(name));
+}
+
+/**
+ * 폴더를 다른 위치에 복사 (실패하면 만든 폴더를 지워 원래 상태로 되돌림)
+ * @param {{dir, name}} target 복사할 폴더
+ * @param {FileSystemDirectoryHandle} destParent 복사해 넣을 상위 폴더
+ * @param {string} newName 복사본 이름
+ * @param {boolean} keepWorkLog true = 상태·이력·잠금까지 그대로, false = 작업 기록 초기화
+ */
+async function copyMenuFolder(target, destParent, newName, keepWorkLog) {
+  const newDir = await destParent.getDirectoryHandle(newName, {create: true});
+  try {
+    await copyDirectory(target.dir, newDir);
+    if (!keepWorkLog) await resetCopiedWorkLog(newDir);
+  } catch (error) {
+    await destParent.removeEntry(newName, {recursive: true});
+    throw error;
+  }
+}
+
+/** 메뉴 복사 창의 [복사] — 열어 둔 화면은 그대로 두므로 이동 확인을 받지 않습니다 */
+async function copySelectedMenu(target, destination) {
+  const newName = await uniqueCopyName(destination.dir, target.name);
+  if (!newName) return toast(`쓸 수 있는 복사 이름이 없습니다. ${COPY_NAME_SUFFIX} 폴더를 정리해 주세요.`);
+  const keepWorkLog = $('#mvKeep').checked;
+  $('#moveModal').hidden = true;
+  try {
+    await withBusy('메뉴를 복사하는 중…', async () => {
+      await copyMenuFolder(target, destination.dir, newName, keepWorkLog);
+      treeState.closedKeys.delete(destination.path.join('/'));   // 복사한 메뉴가 보이도록 상위 폴더를 펼침
+      await renderTree();
+    });
+    toast(`"${newName}" 으로 복사했습니다.`);
+  } catch (error) {
+    toastError('복사 실패', error);
+  }
+}
+
+/* ======================= 위치 선택 창 (이동 · 복사 공용) ======================= */
+
+/** 창의 글자. 이동과 복사가 같은 창(#moveModal)을 씁니다. */
+const MOVE_DIALOG_TEXT = {
+  move: {
+    okText: '이동',
+    title: noun => noun + ' 이동',
+    info: (noun, name) => noun === '폴더'
+      ? `"${name}" 폴더를 하위 내용과 함께 옮길 위치를 선택하세요.`
+      : `"${name}" 메뉴를 옮길 위치를 선택하세요.`,
+    pick: '이동할 위치를 선택하세요.', picked: '이동 위치: '
+  },
+  copy: {
+    okText: '복사',
+    title: () => '메뉴 복사',
+    info: (noun, name) => `"${name}" 메뉴를 복사할 위치를 선택하세요. 이름 뒤에 ${COPY_NAME_SUFFIX} 가 붙습니다.`,
+    pick: '복사할 위치를 선택하세요.', picked: '복사 위치: '
+  }
+};
+
+/**
+ * 넣을 수 있는 위치 목록 (루트와 폴더만)
+ * 제외 대상
+ *   - 옮길/복사할 폴더 자신과 그 아래 (자기 안으로는 넣을 수 없음)
+ *   - 화면(메뉴) 폴더와 그 아래 (화면 안에는 아무것도 넣을 수 없음)
+ */
 async function collectMoveDestinations(dir, path, depth, target, found = []) {
-  found.push({dir, path, depth, name: path.length ? lastOf(path) : app.root.name});
+  found.push({dir, path, depth, name: path.length ? lastOf(path) : rootLabel()});
   for (const name of await listChildFolders(dir)) {
     const childPath = [...path, name];
     if (isSamePath(childPath, target.path)) continue;
-    await collectMoveDestinations(await dir.getDirectoryHandle(name), childPath, depth + 1, target, found);
+    const childDir = await dir.getDirectoryHandle(name);
+    if (await readJson(childDir, 'meta.json', null)) continue;
+    await collectMoveDestinations(childDir, childPath, depth + 1, target, found);
   }
   return found;
 }
 
-/** 메뉴 이동 창 열기 */
-async function openMoveDialog(target) {
+/**
+ * 위치 선택 창 열기
+ * @param {{dir, parent, name, path}} target 옮기거나 복사할 폴더
+ * @param {'move'|'copy'} [mode] 복사는 지금 있는 위치에도 넣을 수 있어 '현재 위치'를 막지 않습니다.
+ */
+async function openMoveDialog(target, mode = 'move') {
+  const text = MOVE_DIALOG_TEXT[mode];
   const destinations = await collectMoveDestinations(app.root, [], 0, target);
   const currentParent = target.path.slice(0, -1);
+  // 고를 수 있는 위치가 없으면 창을 열지 않음 (이동은 지금 있는 위치를 다시 고를 수 없으므로 루트뿐이면 갈 곳이 없음)
+  if (!destinations.some(destination => mode === 'copy' || !isSamePath(destination.path, currentParent))) {
+    return toast('옮길 수 있는 위치가 없습니다. 먼저 ‘하위 폴더 추가’로 폴더를 만들어 주세요.');
+  }
   const list = $('#mvList');
-  moveState = {target, destination: null};
+  moveState = {target, destination: null, mode};
   list.innerHTML = '';
-  $('#mvInfo').textContent = '"' + target.name + '" 폴더(하위 메뉴 포함)를 옮길 위치를 선택하세요.';
+  const noun = target.isScreen ? '메뉴' : '폴더';
+  $('#mvTitle').textContent = text.title(noun);
+  $('#mvOk').textContent = text.okText;
+  $('#mvInfo').textContent = text.info(noun, target.name);
+  $('#mvKeepRow').hidden = mode !== 'copy';
+  $('#mvKeep').checked = false;
 
   for (const destination of destinations) {
     const isCurrent = isSamePath(destination.path, currentParent);
-    const option = createButton({label: '', className: 'mv-item' + (isCurrent ? ' off' : '')});
-    option.disabled = isCurrent;
+    const blocked = isCurrent && mode === 'move';   // 이동은 지금 있는 위치를 다시 고를 수 없음
+    const option = createButton({label: '', className: 'mv-item' + (blocked ? ' off' : '')});
+    option.disabled = blocked;
     option.style.paddingLeft = (10 + destination.depth * 16) + 'px';
     option.setAttribute('role', 'option');
-    option.title = [app.root.name, ...destination.path].join(' / ');
+    option.title = [rootLabel(), ...destination.path].join(' / ');
     option.innerHTML = ICON.folder + `<span class="nm">${escapeHtml(destination.name)}</span>` + (isCurrent ? '<span class="tag">현재 위치</span>' : '');
-    if (!isCurrent) {
-      option.onclick = () => {
+    if (!blocked) {
+      option.onclick = async () => {
         moveState.destination = destination;
         list.querySelectorAll('.mv-item').forEach(other => other.classList.remove('sel'));
         option.classList.add('sel');
-        $('#mvSel').textContent = '이동 위치: ' + describeLocation(destination.path);
         $('#mvOk').disabled = false;
+        $('#mvSel').textContent = text.picked + describeLocation(destination.path);
+        // 복사는 고른 위치에 따라 이름이 달라지므로(_COPY2 …) 미리 보여 줍니다
+        if (mode !== 'copy') return;
+        const newName = await uniqueCopyName(destination.dir, target.name);
+        if (moveState.destination !== destination) return;   // 그 사이 다른 위치를 골랐으면 버림
+        $('#mvSel').textContent = `${text.picked}${describeLocation(destination.path)} · 새 이름: ${newName || '(이름을 만들 수 없음)'}`;
       };
     }
     list.append(option);
   }
-  $('#mvSel').textContent = '이동할 위치를 선택하세요.';
+  $('#mvSel').textContent = text.pick;
   $('#mvOk').disabled = true;
   $('#moveModal').hidden = false;
 }
 
-/** 메뉴 이동 창의 [이동] */
+/** 위치 선택 창의 [이동] / [복사] */
 async function confirmMove() {
-  const {target, destination} = moveState || {};
+  const {target, destination, mode} = moveState || {};
   if (!destination) return;
+  if (mode === 'copy') return copySelectedMenu(target, destination);
   if (await hasSubDir(destination.dir, target.name)) return toast('이동할 위치에 같은 이름의 폴더가 이미 있습니다.');
   if (!(await confirmLeaveScreen())) return;
   $('#moveModal').hidden = true;
@@ -445,7 +586,8 @@ async function confirmMove() {
  * @param {boolean} [resetRootPath] true 면 저장된 루트 경로를 다시 입력받음
  */
 async function copyFolderPath(target, resetRootPath) {
-  const key = SETTING_KEYS.rootPath(app.root.name);
+  if (!app.project) return toast('프로젝트를 먼저 열어 주세요.');
+  const key = SETTING_KEYS.rootPath(app.project.id);   // 프로젝트별로 따로 저장 (이름이 같은 폴더끼리 섞이지 않게)
   let rootPath = resetRootPath ? '' : await settings.get(key);
   if (!rootPath) {
     const answer = await askText({
@@ -476,9 +618,6 @@ async function copyFolderPath(target, resetRootPath) {
 /* ======================= 이벤트 연결 ======================= */
 
 function initTree() {
-  $('#btnPick').onclick = pickRootFolder;
-  $('#btnResume').onclick = resumeRootFolder;
-
   // 검색: 입력이 멈추고 0.25초 뒤에 그리기 (글자마다 다시 그리지 않도록)
   $('#q').oninput = () => {
     clearTimeout(treeState.searchTimer);
@@ -506,7 +645,7 @@ function initTree() {
   $('.side').oncontextmenu = e => {
     if (!app.root || e.target.closest('.node, input, select')) return;
     e.preventDefault();
-    showFolderMenu({x: e.clientX, y: e.clientY}, {dir: app.root, parent: null, name: app.root.name, path: []});
+    showFolderMenu({x: e.clientX, y: e.clientY}, {dir: app.root, parent: null, name: rootLabel(), path: []});
   };
   $('#mvCancel').onclick = () => { $('#moveModal').hidden = true; };
   $('#mvOk').onclick = confirmMove;

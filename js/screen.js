@@ -49,6 +49,7 @@ function createScreenState(path, dir, meta) {
     grids: {},            // 표 id → 행 배열
     blocks: {asis: [], tobe: []},       // SQL 블록 정보
     removedTobeBlocks: [],              // 삭제한 신규 블록 (등록할 때 파일도 지움)
+    removedAsisBlocks: [],              // 잠금을 푼 뒤 삭제한 등록된 기존 블록 (다시 잠글 때 파일도 지움)
     savedFiles: {asis: [], tobe: [], attach: []},    // 등록된 파일 경로
     pendingFiles: {asis: [], tobe: [], attach: []},  // 등록 대기 파일 {file, path}
     editors: {},          // 편집기 id → 편집기 (Ace 또는 글 입력란 래퍼)
@@ -221,13 +222,37 @@ function statusLogHtml(meta) {
   }).join('');
 }
 
-/** 기존 SQL 탭 위 안내: 잠긴 뒤 */
-const lockedBannerHtml = meta => `${ICON.lock}<b>${escapeHtml(meta.asisSavedAt || '')} 등록 · 잠김</b>`
-  + `<span class="muted">수정할 내용은 ‘신규 SQL’ 탭에서 작업하세요.</span><span class="sp"></span><span id="integrity2"></span>`;
+/** 잠금을 푼 적이 있는지 (처음 등록 전인지 / 다시 잠근 것인지 구분할 때 씀) */
+const wasAsisUnlocked = meta => (meta.asisUnlockLog || []).length > 0;
 
-/** 기존 SQL 탭 위 안내: 잠그기 전 */
-const unlockedBannerHtml = () => `${ICON.warn}<b>아직 등록하지 않았습니다</b><span class="muted">등록하면 잠겨서 이후 수정·삭제할 수 없습니다.</span>`
-  + `<span class="sp"></span><button type="button" class="btn btn-s btn-primary" id="saveAsis">기존 내용 등록 후 잠그기</button>`;
+/** 기존 SQL 탭 위 안내: 잠긴 뒤 — 오른쪽 [잠금 풀기]로 사유를 남기고 다시 편집할 수 있습니다 */
+const lockedBannerHtml = meta => `${ICON.lock}<b>${escapeHtml(meta.asisSavedAt || '')} 등록 · 잠김</b>`
+  + `<span class="muted">수정할 내용은 ‘신규 SQL’ 탭에서 작업하세요.</span><span class="sp"></span>`
+  + `<button type="button" class="btn btn-s" id="unlockAsis" title="사유를 남기면 기존 내용을 다시 편집할 수 있습니다">${ICON.unlock}잠금 풀기</button>`;
+
+/** 기존 SQL 탭 위 안내: 잠그기 전 (처음 등록 전 / 잠금을 푼 뒤) */
+function unlockedBannerHtml(meta) {
+  const reopened = wasAsisUnlocked(meta);
+  const head = reopened
+    ? `${ICON.unlock}<b>잠금이 풀려 있습니다</b><span class="muted">수정을 마치면 다시 등록해 잠가 주세요. 다시 잠그면 지금 내용이 새 원본 기준이 됩니다.</span>`
+    : `${ICON.warn}<b>아직 등록하지 않았습니다</b><span class="muted">등록하면 잠겨서 이후 수정·삭제할 수 없습니다.</span>`;
+  return head + `<span class="sp"></span><button type="button" class="btn btn-s btn-primary" id="saveAsis">`
+    + `${reopened ? '수정 내용 등록 후 다시 잠그기' : '기존 내용 등록 후 잠그기'}</button>`;
+}
+
+/** 잠금 해제 이력 띠 — 푼 적이 없으면 아무것도 그리지 않습니다 (해제 중·다시 잠근 뒤 모두 남음) */
+function unlockLogBannerHtml(meta) {
+  const entries = meta.asisUnlockLog || [];
+  if (!entries.length) return '';
+  const items = entries.map(entry => `<li>${escapeHtml(formatDateTime(entry.at))}`
+    + `<span class="sep">·</span>${escapeHtml(entry.by || '-')}`
+    + `<span class="sep">·</span><b>${escapeHtml(entry.reason || '')}</b>`
+    + (entry.relockedAt
+      ? `<span class="ul-end">${escapeHtml(formatDateTime(entry.relockedAt))} 다시 잠금</span>`
+      : `<span class="ul-end open">아직 잠그지 않음</span>`)
+    + `</li>`).join('');
+  return `<div class="banner warn unlocklog">${ICON.unlock}<ul aria-label="잠금 해제 이력">${items}</ul></div>`;
+}
 
 /** 화면 위쪽: 제목 · 작업 정보 한 줄 · 경고 · 탭 */
 function screenHeaderHtml(meta) {
@@ -255,7 +280,8 @@ function screenPanelsHtml(meta) {
   const locked = !!meta.asisLocked;
   return `<div class="scr-body">
     <div class="panel" data-t="asis">
-      <div class="banner ${locked ? 'lock' : 'info'}" id="asisBanner">${locked ? lockedBannerHtml(meta) : unlockedBannerHtml()}</div>
+      <div class="banner ${locked ? 'lock' : 'info'}" id="asisBanner">${locked ? lockedBannerHtml(meta) : unlockedBannerHtml(meta)}</div>
+      <div id="asisUnlockLog">${unlockLogBannerHtml(meta)}</div>
       <div id="blocks-asis" class="blocks${locked ? ' locked' : ''}">${screen.blocks.asis.map(block => sqlBlockHtml('asis', block, locked)).join('')}</div>
       ${locked ? '' : '<button type="button" class="btn-add" data-addblk="asis">+ SQL 블록 추가</button>'}
       <h2 class="sec">기존 파일</h2>${dropZoneHtml('asis', locked)}<ul class="files" id="list-asis"></ul>

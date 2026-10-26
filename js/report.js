@@ -85,11 +85,14 @@ function screenReportHtml(data, index) {
   let sectionNo = 0;
   const section = title => `<h3>${++sectionNo}. ${title}</h3>`;
   const infoRow = (label, valueHtml) => `<tr><th>${label}</th><td>${valueHtml}</td></tr>`;
-  const integrity = !meta.asisLocked
-    ? '<span class="note">기존 내용 미등록</span>'
+  // 잠금을 푼 적이 있으면 횟수를 함께 적습니다 (사유 전문은 앱의 '잠금 해제 이력'에만 남김)
+  const unlockCount = (meta.asisUnlockLog || []).length;
+  const integrityState = !meta.asisLocked
+    ? (unlockCount ? '<span class="bad">잠금 해제 상태 (다시 등록되지 않음)</span>' : '<span class="note">기존 내용 미등록</span>')
     : data.changedFiles.length
       ? '<span class="bad">변경 감지: ' + escapeHtml(data.changedFiles.join(', ')) + '</span>'
       : '<span class="ok">등록 시점과 일치 (SHA-256)</span>';
+  const integrity = integrityState + (unlockCount ? ` <span class="note">· 잠금 해제 ${unlockCount}회</span>` : '');
 
   let html = `<div class="pg" id="p${index}"><div class="ph"><span class="no">${index + 1}</span>`
     + `<div><h2>${escapeHtml(lastOf(data.path))}</h2><p class="pp">${escapeHtml(data.path.join(' / '))}</p></div>`
@@ -103,17 +106,27 @@ function screenReportHtml(data, index) {
   // 변경 내용 요약(메모)
   if (texts.memo.trim()) html += section('변경 내용 요약') + reportTextHtml(texts.memo);
 
-  // 변경 SQL: 같은 순서의 블록끼리
+  // 변경 SQL: 신규 블록에 연결한 기존 블록끼리 (연결이 없는 신규는 '신규 쿼리', 아무도 가리키지 않는 기존은 '신규에 없음')
   const hasSql = data.asisBlocks.some(b => b.sql.trim()) || data.tobeBlocks.some(b => b.sql.trim() || b.rbText.trim());
   if (hasSql) {
     html += section('변경 SQL (변경 전 → 변경 후)');
-    for (let i = 0; i < Math.max(data.asisBlocks.length, data.tobeBlocks.length); i++) {
-      const before = data.asisBlocks[i], after = data.tobeBlocks[i];
-      const title = before && after && before.title !== after.title
+    const pairedAsisIds = new Set();
+    let sqlNo = 0;
+    data.tobeBlocks.forEach((after, order) => {
+      const before = findPairedAsisBlock(after, order, data.asisBlocks);
+      if (before) pairedAsisIds.add(before.id);
+      if (!after.sql.trim() && !after.rbText.trim() && !(before && before.sql.trim())) return;
+      const title = before && before.title !== after.title
         ? `${escapeHtml(before.title)} → ${escapeHtml(after.title)}`
-        : escapeHtml((after || before).title);
-      html += `<h4>${i + 1}. ${title}</h4>` + sideBySideHtml(before ? before.sql : '', after ? after.sql : '', false);
-      if (after && after.rbText.trim()) html += '<div class="cap" style="margin-top:8px">롤백 SQL</div>' + reportTextHtml(after.rbText);
+        : escapeHtml(after.title);
+      html += `<h4>${++sqlNo}. ${title}${before ? '' : ' <span class="note">신규 쿼리</span>'}</h4>`
+        + sideBySideHtml(before ? before.sql : '', after.sql, false);
+      if (after.rbText.trim()) html += '<div class="cap" style="margin-top:8px">롤백 SQL</div>' + reportTextHtml(after.rbText);
+    });
+    for (const before of data.asisBlocks) {
+      if (pairedAsisIds.has(before.id) || !before.sql.trim()) continue;
+      html += `<h4>${++sqlNo}. ${escapeHtml(before.title)} <span class="note">신규에 없음</span></h4>`
+        + sideBySideHtml(before.sql, '', false);
     }
   }
 
@@ -189,7 +202,7 @@ async function buildReport(title, scope) {
 
   return `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${reportCss()}</style></head><body>
 <div class="noprint"><button onclick="print()">인쇄 / PDF 저장</button></div><div class="doc">
-<div class="cover"><h1>${escapeHtml(title)}</h1><p class="sub">${escapeHtml(app.root.name)} · 작성일 ${new Date().toLocaleString('ko-KR')} · 대상: ${scopeName} ${included.length}건</p>
+<div class="cover"><h1>${escapeHtml(title)}</h1><p class="sub">${escapeHtml(rootLabel())} · 작성일 ${new Date().toLocaleString('ko-KR')} · 대상: ${scopeName} ${included.length}건</p>
 <div class="cards">${card(total, '전체 화면')}${card(counts[3], '운영')}${card(counts[2], '개발')}${card(counts[1], '진행')}${card(counts[0], '요청')}</div>
 <div>운영 반영률 <b>${prodPercent}%</b> (${counts[STATUS_PROD]} / ${total})</div><div class="gauge"><i style="width:${prodPercent}%"></i></div>
 <h3>변경 대상 목록</h3><table class="t"><thead><tr><th>번호</th><th>화면</th><th>티켓</th><th>작업자</th><th>상태</th><th>개발 반영일</th><th>운영 반영일</th><th>변경 SQL</th><th>파일 수</th></tr></thead><tbody>${indexRows}</tbody></table>
@@ -205,7 +218,7 @@ function initReport() {
       const ok = await askConfirm({title: '등록하지 않은 변경이 있습니다', desc: '보고서에는 등록된 내용만 반영됩니다. 계속할까요?', okText: '계속'});
       if (!ok) return;
     }
-    $('#rpTitle').value = app.root.name + ' 변경 결과 보고서';
+    $('#rpTitle').value = rootLabel() + ' 변경 결과 보고서';
     $('#modal').hidden = false;
     $('#rpTitle').focus();
   };

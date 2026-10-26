@@ -7,7 +7,10 @@
    ========================================================================== */
 
 const app = {
-  /** 사용자가 고른 루트 폴더 (FileSystemDirectoryHandle). 고르기 전에는 null */
+  /** 열려 있는 프로젝트 {id, name, handle, lastOpenedAt} (js/project.js). 고르기 전에는 null
+   *  project 는 있는데 root 가 null 이면: 폴더 권한이 끊겨 아직 열지 못한 상태 */
+  project: null,
+  /** 지금 쓰고 있는 루트 폴더 (FileSystemDirectoryHandle) = app.project.handle. 열기 전에는 null */
   root: null,
   /** 열려 있는 화면 상태. 현황(대시보드)일 때는 null */
   screen: null,

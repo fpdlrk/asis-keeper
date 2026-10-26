@@ -145,14 +145,25 @@ const isBusy = () => busyCount > 0;
 /**
  * 작은 메뉴 띄우기
  * @param {{x: number, y: number}} position 화면 좌표 (화면 밖으로 나가지 않게 조정)
- * @param {Array<[string, Function, ('danger'|undefined)]>} items [문구, 실행할 함수, 'danger'(빨간 글자)]
+ * @param {Array} items 항목 배열. '-' 하나만 넣으면 구분선.
+ *   항목 = [문구, 실행할 함수, 'danger'(빨간 글자), 아이콘 HTML(MENU_ICON 의 값), 오른쪽 꼬리말]
  */
 function showMenu(position, items) {
   const menu = $('#ctx');
   menu.innerHTML = '';
-  for (const [label, action, kind] of items) {
+  for (const entry of items) {
+    if (entry === '-') {
+      menu.insertAdjacentHTML('beforeend', '<div class="mi-line" role="separator"></div>');
+      continue;
+    }
+    const [label, action, kind, iconHtml, trailing] = entry;
     const item = createButton({label, className: kind === 'danger' ? 'danger' : ''});
     item.setAttribute('role', 'menuitem');
+    // 아이콘·꼬리말이 있으면 다시 조립 (iconHtml 은 MENU_ICON 의 고정값이라 사용자 입력이 섞이지 않음)
+    if (iconHtml || trailing) {
+      item.innerHTML = (iconHtml || '') + `<span class="mi-label">${escapeHtml(label)}</span>`
+        + (trailing ? `<span class="mi-trail">${escapeHtml(trailing)}</span>` : '');
+    }
     item.onclick = e => { e.stopPropagation(); hideMenu(); action(); };
     menu.append(item);
   }
@@ -167,9 +178,10 @@ function showMenu(position, items) {
 const hideMenu = () => { $('#ctx').hidden = true; };
 
 /** 버튼 바로 아래(오른쪽 끝 맞춤)에 메뉴 띄우기 — ⋯ 버튼용 */
-function showMenuBelow(button, items) {
+function showMenuBelow(button, items, align = 'right') {
   const rect = button.getBoundingClientRect();
-  showMenu({x: rect.right - 200, y: rect.bottom + 4}, items);
+  // 'right' = 단추 오른쪽 끝에 맞춤(⋯ 버튼용), 'left' = 단추 왼쪽 끝에 맞춤(상단 왼쪽 단추용)
+  showMenu({x: align === 'left' ? rect.left : rect.right - 200, y: rect.bottom + 4}, items);
 }
 
 /** ⋯ 모양 메뉴 버튼 만들기. getItems 는 누를 때마다 메뉴 항목을 만들어 돌려주는 함수 */

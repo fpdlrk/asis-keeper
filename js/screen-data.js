@@ -69,6 +69,22 @@ async function loadSqlBlocks(dir, meta, kind) {
 }
 
 /**
+ * 신규 SQL 블록과 짝이 되는 기존 블록 찾기 (나란히 보기·비교 탭·보고서가 함께 씁니다)
+ *   asisId 가 있으면  → 그 id 의 기존 블록 (없어졌으면 null)
+ *   asisId 가 ''      → 짝 없음 = 신규 쿼리
+ *   asisId 가 없으면   → 예전 데이터이므로 같은 순서의 기존 블록
+ * @param {{asisId?: string}} tobeBlock 신규 블록
+ * @param {number} order 신규 블록의 순서(0부터)
+ * @param {{id: string}[]} asisBlocks 기존 블록 목록
+ * @returns {object|null}
+ */
+function findPairedAsisBlock(tobeBlock, order, asisBlocks) {
+  if (tobeBlock.asisId === NO_ASIS_PAIR) return null;
+  if (tobeBlock.asisId) return asisBlocks.find(block => block.id === tobeBlock.asisId) || null;
+  return asisBlocks[order] || null;
+}
+
+/**
  * 등록 시점의 해시와 지금 파일을 비교해 달라진 파일 찾기 (원본 무결성 확인)
  * @param {object} hashes {상대경로: 해시}
  * @param {object} [opt]

@@ -60,6 +60,15 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .brand { display: flex; align-items: center; gap: 8px; color: var(--acc); }
 .brand span { font-size: 15px; font-weight: 700; color: var(--ink); }
 .vsep { width: 1px; height: 18px; background: var(--line); }
+/* 프로젝트 전환 단추 (상단 왼쪽) */
+.projbtn { display: flex; align-items: center; gap: 7px; max-width: 260px; height: 30px; padding: 0 9px; border: 1px solid var(--field); border-radius: var(--r);
+  background: #fff; color: var(--ink); font-weight: 600; cursor: pointer; white-space: nowrap; }
+.projbtn:hover { background: var(--acc-soft); border-color: #c5cad1; }
+.projbtn > svg:first-child { color: var(--sub); flex: none; }
+.projbtn > svg:last-child { color: var(--faint); flex: none; }
+.projbtn #projName { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.projbtn.empty { color: var(--sub); font-weight: 400; border-style: dashed; }
+.projlock { display: inline-flex; align-items: center; flex: none; color: var(--warn-dot); }
 .crumb { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--sub); overflow: hidden; white-space: nowrap; }
 .crumb .sep { color: var(--faint); }
 .crumb .here { color: var(--ink); font-weight: 600; }
@@ -110,6 +119,9 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .node.fd .nm { font-weight: 600; color: var(--ink); }
 .node .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .node .cnt { font-size: 11px; font-weight: 400; color: var(--sub); }
+/* 폴더(메뉴 묶음) 아이콘 — 화면(페이지)에는 붙지 않아 둘을 구분하는 표시가 됩니다 */
+.node .ic { flex: none; color: var(--faint); }
+.node:hover .ic, .node.fd .ic { color: var(--sub); }
 .tw { width: 10px; height: 10px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--sub); transition: transform .15s; }
 .tree li.closed > .node .tw { transform: rotate(-90deg); }
 .nohit { padding: 12px 8px; color: var(--sub); font-size: 12px; }
@@ -147,12 +159,22 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .row-t { flex: none; font-size: 12px; color: var(--sub); }
 .pad { margin: 0; padding: 14px 16px; display: flex; align-items: center; gap: 6px; }
 
-.banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 12px 14px; border-radius: var(--r-l); background: var(--soft); color: var(--ink); margin-bottom: 14px; }
+.banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 6px 14px; border-radius: var(--r-l); background: var(--soft); color: var(--ink); margin-bottom: 4px; }
 .banner.info { background: var(--acc-soft); }
 .banner.lock { background: var(--soft); }
 .banner.lock > svg { color: var(--sub); }
 .banner.bad { background: var(--bad-bg); color: var(--bad); align-items: flex-start; }
 .banner.bad ul { margin: 6px 0 0; padding-left: 18px; }
+/* 잠금 해제 이력 띠: 기존 SQL 탭 안내 바로 아래에 쌓임 */
+.banner.warn { background: var(--warn-bg); color: var(--warn); align-items: flex-start; }
+.banner.warn > svg { color: var(--warn-dot); flex: none; margin-top: 2px; }
+.unlocklog ul { list-style: none; margin: 0; padding: 0; flex: 1; }
+.unlocklog li { padding: 2px 0; }
+.unlocklog li + li { border-top: 1px solid rgba(138, 75, 0, .14); }
+.unlocklog li b { font-weight: 600; }
+.unlocklog .sep { color: var(--faint); margin: 0 5px; }
+.unlocklog .ul-end { margin-left: 8px; color: var(--sub); font-size: 11.5px; }
+.unlocklog .ul-end.open { color: var(--bad); font-weight: 600; }
 .home .banner { margin: 0 0 18px; }
 
 /* ---- 6. 화면: 헤더 · 탭 · 패널 ---- */
@@ -240,8 +262,14 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .pane-l { background: var(--soft); border-right: 1px solid var(--line); }
 .pane-h { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid #eceef1; font-size: 12px; font-weight: 600; color: var(--sub); white-space: nowrap; overflow: hidden; }
 .pane-h.acc { color: var(--acc); }
-.pair-t { font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
-.pair-none { padding: 24px 16px; color: var(--sub); font-size: 12px; }
+.pair-none { padding: 24px 16px; color: var(--bad); font-size: 12px; }
+/* 비교할 기존 SQL 선택 상자 */
+.pair-sel { max-width: 100%; min-width: 0; height: 22px; padding: 0 4px; border: 1px solid var(--field); border-radius: 4px;
+  background: #fff; color: var(--sub); font-size: 12px; font-weight: 400; cursor: pointer; }
+.pair-sel:hover { border-color: #c5cad1; color: var(--ink); }
+/* '없음 (신규 쿼리)'를 고르면 왼쪽 칸을 숨기고 신규 SQL 을 넓게 */
+.blk.no-pair .pane-l { display: none; }
+.blk.no-pair .blk-b { grid-template-columns: minmax(0, 1fr); }
 .pane .ed { border: 0; border-radius: 0; }
 .blk-sub { padding: 8px 12px 4px; font-size: 12px; font-weight: 600; color: var(--sub); border-top: 1px solid var(--line); }
 .ed { min-height: 100px; border: 1px solid var(--field); border-radius: var(--r); overflow: hidden; resize: vertical; }
@@ -331,9 +359,15 @@ table.grid .icon { width: 26px; height: 26px; border: 0; background: transparent
 .dfbody { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid var(--line2); padding-top: 12px; }
 
 #ctx { position: fixed; z-index: 60; min-width: 200px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-l); background: #fff; box-shadow: 0 8px 24px rgba(0, 0, 0, .16); }
-#ctx button { display: block; width: 100%; padding: 8px 12px; border: 0; border-radius: 4px; background: none; text-align: left; cursor: pointer; }
+#ctx button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 12px; border: 0; border-radius: 4px; background: none; text-align: left; white-space: nowrap; cursor: pointer; }
 #ctx button:hover, #ctx button:focus { background: var(--acc-soft); outline: 0; }
+#ctx button .ic { flex: none; color: var(--sub); }
+#ctx button .mi-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#ctx button .mi-trail { flex: none; margin-left: 10px; color: var(--faint); font-size: 11.5px; font-weight: 400; }
+#ctx .mi-line { height: 1px; margin: 4px 6px; background: var(--line); }
+#ctx button:hover .ic, #ctx button:focus .ic { color: var(--acc); }
 #ctx button.danger { color: var(--bad); }
+#ctx button.danger .ic { color: var(--bad); }
 #ctx button.danger:hover { background: var(--bad-bg); }
 
 #toast { position: fixed; bottom: 76px; left: 50%; z-index: 70; transform: translateX(-50%); max-width: min(560px, 90vw); padding: 9px 16px; border-radius: var(--r);

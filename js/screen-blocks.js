@@ -32,28 +32,51 @@ const newBlockId = () => 'b' + Date.now().toString(36) + Math.floor(Math.random(
 function createSqlBlock(kind, order) {
   const id = newBlockId();
   const title = (kind === 'asis' ? '기존 SQL' : '신규 SQL') + (order > 1 ? ' ' + order : '');
-  return {id, title, file: `${kind}/sql/${id}.sql`, sql: '', rbText: ''};
+  const block = {id, title, file: `${kind}/sql/${id}.sql`, sql: '', rbText: ''};
+  // 새로 만든 신규 블록은 짝 없음(신규 쿼리)에서 시작합니다 — 비교할 기존 SQL 은 사용자가 고릅니다
+  if (kind === 'tobe') block.asisId = NO_ASIS_PAIR;
+  return block;
 }
 
 /** 블록 정보 찾기 */
 const findSqlBlock = (kind, blockId) => app.screen.blocks[kind].find(block => block.id === blockId);
 
+/** 블록 제목 규칙: 항상 대문자 (한글·숫자는 그대로) */
+const toBlockTitle = title => String(title || '').toUpperCase();
+
+/**
+ * 제목 입력칸을 대문자로 고치기 (입력할 때마다 불림)
+ * 값이 바뀔 때만 다시 넣고 커서 자리를 되돌립니다 — 한글 입력 중 조합이 끊기지 않게 하기 위함입니다.
+ * @param {HTMLInputElement} input 제목 입력칸(.bt)
+ */
+function forceUpperCaseTitle(input) {
+  const upper = toBlockTitle(input.value);
+  if (upper === input.value) return;
+  const {selectionStart, selectionEnd} = input;
+  input.value = upper;
+  input.setSelectionRange(selectionStart, selectionEnd);
+}
+
 /**
  * 화면에 있는 블록을 순서대로 읽기 (제목·SQL 은 지금 입력된 값)
- * @returns {{id: string, element: HTMLElement, title: string, sql: string}[]}
+ * @returns {{id, element, title, sql, asisId}[]} asisId 는 신규 블록에만 (findPairedAsisBlock 용)
  */
 function readBlockInputs(kind) {
   const defaultTitle = kind === 'asis' ? '기존 SQL' : '신규 SQL';
   return $$(`#blocks-${kind} .blk`).map(element => ({
     id: element.dataset.id,
     element,
-    title: element.querySelector('.bt').value.trim() || defaultTitle,
-    sql: getEditorValue(editorId(kind, element.dataset.id))
+    title: toBlockTitle(element.querySelector('.bt').value.trim()) || defaultTitle,
+    sql: getEditorValue(editorId(kind, element.dataset.id)),
+    asisId: (findSqlBlock(kind, element.dataset.id) || {}).asisId
   }));
 }
 
-/** 블록 순서·제목을 문자열로 (등록 후 블록을 추가·삭제·제목 변경했는지 비교용) */
-const blockOrderSignature = kind => JSON.stringify($$(`#blocks-${kind} .blk`).map(element => [element.dataset.id, element.querySelector('.bt').value.trim()]));
+/** 블록 순서·제목·연결한 기존 블록을 문자열로 (등록 후 바뀌었는지 비교용) */
+const blockOrderSignature = kind => JSON.stringify($$(`#blocks-${kind} .blk`).map(element => {
+  const block = findSqlBlock(kind, element.dataset.id) || {};
+  return [element.dataset.id, element.querySelector('.bt').value.trim(), block.asisId ?? null];
+}));
 
 /** 블록이 등록 이후 바뀌었는지 (추가·삭제·제목·SQL). 왼쪽 비교용 편집기(p:)는 제외 */
 function isBlockListChanged(kind) {
@@ -93,8 +116,9 @@ function sqlBlockHtml(kind, block, locked) {
       <button type="button" class="btn btn-s" data-from="${block.id}">기존 SQL 가져오기</button>
       <button type="button" class="icon" data-menu="tobe" data-bid="${block.id}" aria-label="블록 메뉴 (복사, 기존과 비교, 삭제)">⋯</button></div>
     <div class="blk-b">
-      <div class="pane pane-l"><div class="pane-h">${ICON.lock}기존 · 읽기 전용<span class="pair-t" data-pair-t="${block.id}"></span></div>
-        <div class="ed" data-id="${editorId('pair', block.id)}"></div><div class="pair-none" data-pair-none="${block.id}" hidden>같은 순서의 기존 SQL 블록이 없습니다.</div></div>
+      <div class="pane pane-l"><div class="pane-h">${ICON.lock}기존
+        <select class="pair-sel" data-pair-sel="${block.id}" aria-label="비교할 기존 SQL 블록"></select></div>
+        <div class="ed" data-id="${editorId('pair', block.id)}"></div><div class="pair-none" data-pair-none="${block.id}" hidden>고른 기존 SQL 블록이 없어졌습니다. 다시 골라 주세요.</div></div>
       <div class="pane pane-r"><div class="pane-h acc">신규 (편집)</div><div class="ed" data-id="${editorId('tobe', block.id)}"></div></div>
     </div>
     ${rollback}
@@ -115,7 +139,7 @@ function sqlBlockHtml(kind, block, locked) {
 function insertSqlBlock(kind, {after = null, sql = '', title = ''} = {}) {
   const container = $('#blocks-' + kind);
   const block = createSqlBlock(kind, container.children.length + 1);
-  if (title) block.title = title;
+  if (title) block.title = toBlockTitle(title);
   app.screen.blocks[kind].push(block);
   const html = sqlBlockHtml(kind, block, false);
   if (after) after.insertAdjacentHTML('afterend', html);
@@ -144,7 +168,8 @@ function addSqlBlock(kind) {
  */
 function watchSqlPaste(editor, id) {
   const kind = id.startsWith(EDITOR_PREFIX.asis) ? 'asis' : id.startsWith(EDITOR_PREFIX.tobe) ? 'tobe' : null;
-  if (!kind) return;
+  if (!kind || editor.sqlPasteWatched) return;   // 잠금을 여러 번 풀어도 감시는 한 번만 붙임
+  editor.sqlPasteWatched = true;
   const blockId = id.slice(EDITOR_PREFIX[kind].length);
   editor.on('paste', event => {
     const statements = splitSqlStatements(event.text);
@@ -177,7 +202,7 @@ async function offerSqlSplit(kind, blockId, editor, pastedText, statements) {
   let previous = $(`#blocks-${kind} .blk[data-id="${blockId}"]`);
   if (!editor.getValue().trim()) {
     editor.setValue(statements[0].sql, -1);
-    if (statements[0].title) previous.querySelector('.bt').value = statements[0].title;
+    if (statements[0].title) previous.querySelector('.bt').value = toBlockTitle(statements[0].title);
     remaining = statements.slice(1);
   }
   for (const statement of remaining) previous = insertSqlBlock(kind, {after: previous, sql: statement.sql, title: statement.title});
@@ -186,19 +211,24 @@ async function offerSqlSplit(kind, blockId, editor, pastedText, statements) {
   toast(`SQL ${count}개를 블록으로 나눴습니다.`);
 }
 
-/** 블록 삭제 (신규 블록의 파일은 등록할 때 함께 지움) */
+/** 블록 삭제 (등록된 블록의 파일은 다음 등록 때 함께 지움) */
 async function deleteSqlBlock(kind, blockId) {
   const screen = app.screen;
   const element = $(`#blocks-${kind} .blk[data-id="${blockId}"]`);
   const block = findSqlBlock(kind, blockId);
   if (!element) return;
-  const desc = '이 SQL 블록을 삭제할까요?' + (kind === 'tobe' ? '\n등록하면 저장된 파일도 함께 삭제됩니다.' : '');
+  // 잠금을 푼 기존 블록은 이미 파일이 있으므로, 다시 잠글 때 파일까지 지워야 함
+  const savedAsisBlocks = (screen.meta.sqlBlocks && screen.meta.sqlBlocks.asis) || [];
+  const wasRegistered = kind === 'asis' && savedAsisBlocks.some(saved => saved.id === blockId);
+  const desc = '이 SQL 블록을 삭제할까요?'
+    + (kind === 'tobe' || wasRegistered ? '\n등록하면 저장된 파일도 함께 삭제됩니다.' : '');
   if (!(await askConfirm({title: 'SQL 블록 삭제', desc, okText: '삭제', danger: true}))) return;
 
   clearLineMarks(blockId);
   Object.keys(EDITOR_PREFIX).forEach(prefixKind => destroyEditor(editorId(prefixKind, blockId)));
   element.remove();
   if (kind === 'tobe') screen.removedTobeBlocks.push(block);
+  else if (wasRegistered) screen.removedAsisBlocks.push(block);
   screen.blocks[kind] = screen.blocks[kind].filter(other => other.id !== blockId);
   refreshPairedBlocks();
   refreshIndicators();
@@ -219,11 +249,12 @@ async function copyEditorText(id) {
   toast('복사했습니다.');
 }
 
-/** [기존 SQL 가져오기]: 같은 순서의 기존 블록 SQL 을 신규 블록에 복사 */
+/** [기존 SQL 가져오기]: 이 블록에 연결한 기존 블록의 SQL 을 신규 블록에 복사 */
 async function importAsisSql(tobeBlockId) {
-  const order = readBlockInputs('tobe').findIndex(block => block.id === tobeBlockId);
-  const asisBlock = readBlockInputs('asis')[order];
-  if (!asisBlock) return toast('가져올 기존 SQL 블록이 없습니다. (같은 순서의 기존 블록을 가져옵니다)');
+  const tobeBlocks = readBlockInputs('tobe');
+  const order = tobeBlocks.findIndex(block => block.id === tobeBlockId);
+  const asisBlock = findPairedAsisBlock(tobeBlocks[order], order, readBlockInputs('asis'));
+  if (!asisBlock) return toast('가져올 기존 SQL 블록이 없습니다. 왼쪽 ‘기존’에서 비교할 블록을 먼저 고르세요.');
   if (!asisBlock.sql.trim()) return toast('가져올 기존 SQL이 없습니다.');
   const tobeId = editorId('tobe', tobeBlockId);
   if (getEditorValue(tobeId).trim()) {
@@ -236,6 +267,50 @@ async function importAsisSql(tobeBlockId) {
 
 /* ======================= 기존과 나란히 보기 ======================= */
 
+/* '비교할 기존 SQL' 선택 상자에서 '짝 없음'을 나타내는 값 (빈 값은 select 에서 다루기 번거로워 따로 둠) */
+const PAIR_SELECT_NONE = '__none__';
+/* 예전 데이터(지정이 없어 같은 순서로 짝지은 상태)를 나타내는 값 */
+const PAIR_SELECT_AUTO = '__auto__';
+
+/**
+ * '비교할 기존 SQL' 선택 상자 채우기
+ * @param {HTMLSelectElement} select 선택 상자
+ * @param {object} tobeBlock 신규 블록 (asisId 를 봄)
+ * @param {number} order 신규 블록 순서
+ * @param {object[]} asisBlocks 기존 블록 목록
+ * @param {object|null} pairedBlock 지금 짝지어진 기존 블록
+ */
+function fillPairSelect(select, tobeBlock, order, asisBlocks, pairedBlock) {
+  if (!select) return;
+  const options = asisBlocks.map((block, i) => `<option value="${escapeHtml(block.id)}">${i + 1}. ${escapeHtml(block.title)}</option>`);
+  options.push(`<option value="${PAIR_SELECT_NONE}">없음 (신규 쿼리)</option>`);
+  // 아직 지정하지 않은 예전 데이터는 지금 짝을 '자동(순서)'로 보여 주고, 고르면 그때 확정됩니다
+  if (tobeBlock.asisId === undefined) {
+    const autoLabel = pairedBlock ? `자동(순서) · ${pairedBlock.title}` : '자동(순서) · 짝 없음';
+    options.unshift(`<option value="${PAIR_SELECT_AUTO}">${escapeHtml(autoLabel)}</option>`);
+  }
+  const value = tobeBlock.asisId === undefined
+    ? PAIR_SELECT_AUTO
+    : (pairedBlock ? pairedBlock.id : PAIR_SELECT_NONE);
+  const html = options.join('');
+  if (select.innerHTML !== html) select.innerHTML = html;
+  select.value = value;
+  select.title = pairedBlock ? '비교 중: ' + pairedBlock.title : '비교할 기존 SQL 이 없습니다 (신규 쿼리)';
+}
+
+/**
+ * '비교할 기존 SQL' 을 바꿨을 때 — 신규 블록에 연결 정보를 적고 다시 그림
+ * @param {string} tobeBlockId 신규 블록 id
+ * @param {string} selectedValue 선택 상자 값 (기존 블록 id | PAIR_SELECT_NONE | PAIR_SELECT_AUTO)
+ */
+function setTobePair(tobeBlockId, selectedValue) {
+  const block = findSqlBlock('tobe', tobeBlockId);
+  if (!block || selectedValue === PAIR_SELECT_AUTO) return;   // '자동(순서)'는 고를 수 없고 표시만 함
+  block.asisId = selectedValue === PAIR_SELECT_NONE ? NO_ASIS_PAIR : selectedValue;
+  refreshPairedBlocks();
+  refreshIndicators();
+}
+
 /**
  * 신규 블록마다 같은 순서의 기존 블록을 왼쪽(p:)에 채우고 바뀐 줄 표시
  * 신규 탭을 열 때, 블록을 추가·삭제할 때 불림
@@ -246,11 +321,14 @@ function refreshPairedBlocks() {
   readBlockInputs('tobe').forEach((tobeBlock, order) => {
     const pairEditor = screen.editors[editorId('pair', tobeBlock.id)];
     if (!pairEditor) return;
-    const asisBlock = asisBlocks[order];
+    const asisBlock = findPairedAsisBlock(tobeBlock, order, asisBlocks);
     const element = tobeBlock.element;
-    element.querySelector('[data-pair-none]').hidden = !!asisBlock;
+    fillPairSelect(element.querySelector('[data-pair-sel]'), tobeBlock, order, asisBlocks, asisBlock);
+    // 고른 블록이 없어진 경우에만 안내를 띄웁니다 ('없음'을 고른 경우는 왼쪽 칸 자체를 숨김)
+    const lostPair = !asisBlock && !!tobeBlock.asisId;
+    element.classList.toggle('no-pair', !asisBlock && !lostPair);
+    element.querySelector('[data-pair-none]').hidden = !lostPair;
     pairEditor.container.style.display = asisBlock ? '' : 'none';
-    element.querySelector('[data-pair-t]').textContent = asisBlock ? ' · ' + asisBlock.title : '';
 
     const text = asisBlock ? asisBlock.sql : '';
     if (pairEditor.getValue() !== text) pairEditor.setValue(text, -1);

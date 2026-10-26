@@ -44,19 +44,20 @@ function showHome() {
 
 /** 루트를 고르기 전 안내 화면 */
 function renderWelcome(main) {
-  const resumeButton = $('#btnResume');
-  const canResume = !resumeButton.hidden;
+  // app.project 는 있는데 app.root 가 없으면: 권한이 끊겨 아직 열지 못한 프로젝트 (클릭하면 허용을 요청)
+  const pending = app.project;
   main.innerHTML = `<div class="home-empty">
     <div class="hero-ic">${ICON.logo}</div>
     <h1>ASIS 원본 보관함</h1>
     <p>변경 전(ASIS) 원본을 화면별로 잠가 보관하고, 변경 후(TOBE)와 비교해 고객 전달용 보고서를 만듭니다.</p>
     <div class="actions">
-      ${canResume ? `<button type="button" class="btn btn-primary btn-s" data-home="resume">${escapeHtml(resumeButton.textContent)}</button>` : ''}
-      <button type="button" class="btn ${canResume ? '' : 'btn-primary'} btn-s" data-home="pick">루트 폴더 선택</button>
+      ${pending ? `<button type="button" class="btn btn-primary btn-s" data-home="open">"${escapeHtml(pending.name)}" 열기</button>` : ''}
+      <button type="button" class="btn ${pending ? '' : 'btn-primary'} btn-s" data-home="add">프로젝트 추가</button>
     </div>
+    ${pending ? '<p class="muted">폴더 권한은 브라우저를 닫으면 풀립니다. 열기를 누르면 다시 허용을 묻습니다.</p>' : ''}
   </div>`;
   main.querySelectorAll('[data-home]').forEach(button => {
-    button.onclick = () => (button.dataset.home === 'pick' ? pickRootFolder() : resumeRootFolder());
+    button.onclick = () => (button.dataset.home === 'add' ? addProject() : openProject(pending));
   });
 }
 
@@ -143,6 +144,8 @@ async function findIssues(screens, seq) {
 
     if (meta.asisLocked) {
       if ((await findChangedFiles(dir, meta.hashes, {stopAtFirst: true})).length) add('bad', '원본 변경', 'ASIS 원본이 등록 시점과 다릅니다');
+    } else if (wasAsisUnlocked(meta)) {
+      add('bad', '잠금 해제 중', '기존 내용의 잠금이 풀려 있습니다. 수정을 마쳤으면 다시 등록해 잠가 주세요');
     } else if (statusIndex >= STATUS_DEV) {
       add('warn', 'ASIS 없음', statusName + ' 상태인데 기존 내용이 등록되지 않았습니다');
     }

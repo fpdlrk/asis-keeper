@@ -38,6 +38,7 @@ function showEditorMissing() {
 
   $('#app').hidden = false;
   initDialogs();
+  initProjects();
   initTree();
   initScreen();
   initDiff();
@@ -49,5 +50,5 @@ function showEditorMissing() {
     $$('[data-ignore-format]').forEach(checkbox => { checkbox.checked = app.ignoreFormat; });
   }).catch(() => {});
   showHome();
-  restoreLastRoot();
+  restoreLastProject();
 })();

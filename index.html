@@ -23,11 +23,17 @@
       <span>ASIS 원본 보관함</span>
     </div>
     <span class="vsep" aria-hidden="true"></span>
+    <!-- 프로젝트(루트 폴더) 전환 — 누르면 등록한 목록이 열립니다 (js/project.js) -->
+    <button type="button" id="btnProject" class="projbtn empty" aria-haspopup="menu">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M1.5 4.5a1 1 0 0 1 1-1h3L7 5h6.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>
+      <span id="projName">프로젝트 선택</span>
+      <span id="projLock" class="projlock" role="img" aria-label="폴더 권한 다시 허용 필요" title="폴더 권한이 끊겼습니다. 눌러 다시 허용하세요." hidden><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3.5"/><path d="M10.5 10.5 19 19M16 16l-2 2M19 19l1.5-1.5"/></svg></span>
+      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+    </button>
+    <span class="vsep" aria-hidden="true"></span>
     <nav class="crumb" id="crumb" aria-label="현재 위치"></nav>
     <span class="sp"></span>
-    <button type="button" id="btnResume" class="btn btn-s btn-primary" hidden></button>
     <button type="button" id="btnFont" class="btn btn-s btn-ghost" title="글꼴 설정">글꼴</button>
-    <button type="button" id="btnPick" class="btn btn-s">루트 폴더 선택</button>
     <button type="button" id="btnReport" class="btn btn-s btn-primary" disabled>보고서 만들기</button>
   </header>
 
@@ -87,11 +93,13 @@
   <div class="mbar"><button type="button" class="btn btn-s" id="fCancel">취소</button><button type="button" class="btn btn-s btn-primary" id="fOk">적용</button></div>
 </div></div>
 
-<div id="moveModal" class="overlay" hidden><div class="mbox" role="dialog" aria-label="메뉴 이동">
-  <h3>메뉴 이동</h3>
+<!-- 메뉴 이동 · 메뉴 복사가 함께 쓰는 창 (제목·버튼 글자는 js/tree.js 에서 바꿉니다) -->
+<div id="moveModal" class="overlay" hidden><div class="mbox" role="dialog" aria-labelledby="mvTitle">
+  <h3 id="mvTitle">메뉴 이동</h3>
   <p class="hint" id="mvInfo"></p>
   <div id="mvList" class="mvlist" role="listbox"></div>
   <p class="hint" id="mvSel"></p>
+  <label class="chk" id="mvKeepRow" hidden><input type="checkbox" id="mvKeep"><span>작업 기록(상태 · 상태 이력 · ASIS 잠금)까지 그대로 복사</span></label>
   <div class="mbar"><button type="button" class="btn btn-s" id="mvCancel">취소</button><button type="button" class="btn btn-s btn-primary" id="mvOk" disabled>이동</button></div>
 </div></div>
 
@@ -123,6 +131,7 @@
 <script src="js/screen-save.js"></script>
 <script src="js/report.js"></script>
 <script src="js/fonts.js"></script>
+<script src="js/project.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

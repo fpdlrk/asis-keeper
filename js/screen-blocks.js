@@ -111,14 +111,15 @@ function sqlBlockHtml(kind, block, locked) {
   const rollback = (block.rbText || '').trim()
     ? `<div class="blk-sub">롤백 SQL <span class="muted">이전에 입력한 내용입니다. 비우고 등록하면 이 칸은 사라집니다.</span></div><div class="ed" data-id="${editorId('rollback', block.id)}"></div>`
     : '';
+  // '비교할 기존 SQL' 선택 상자는 블록 머리에 둡니다 — 왼쪽 칸은 '없음'일 때 숨겨지므로 그 안에 두면 다시 고를 수 없습니다
   return `<div class="blk" data-id="${block.id}">
     <div class="blk-h">${blockTitleHtml(block, false)}<span class="chg" data-chg="${block.id}"></span><span class="sp"></span>
+      <label class="pair-pick">기존<select class="pair-sel" data-pair-sel="${block.id}" aria-label="비교할 기존 SQL 블록"></select></label>
       <button type="button" class="btn btn-s" data-from="${block.id}">기존 SQL 가져오기</button>
       <button type="button" class="icon" data-menu="tobe" data-bid="${block.id}" aria-label="블록 메뉴 (복사, 기존과 비교, 삭제)">⋯</button></div>
     <div class="blk-b">
-      <div class="pane pane-l"><div class="pane-h">${ICON.lock}기존
-        <select class="pair-sel" data-pair-sel="${block.id}" aria-label="비교할 기존 SQL 블록"></select></div>
-        <div class="ed" data-id="${editorId('pair', block.id)}"></div><div class="pair-none" data-pair-none="${block.id}" hidden>고른 기존 SQL 블록이 없어졌습니다. 다시 골라 주세요.</div></div>
+      <div class="pane pane-l"><div class="pane-h">${ICON.lock}기존 · 읽기 전용<span class="pair-t" data-pair-t="${block.id}"></span></div>
+        <div class="ed" data-id="${editorId('pair', block.id)}"></div><div class="pair-none" data-pair-none="${block.id}" hidden>고른 기존 SQL 블록이 없어졌습니다. 블록 머리에서 다시 골라 주세요.</div></div>
       <div class="pane pane-r"><div class="pane-h acc">신규 (편집)</div><div class="ed" data-id="${editorId('tobe', block.id)}"></div></div>
     </div>
     ${rollback}
@@ -295,7 +296,8 @@ function fillPairSelect(select, tobeBlock, order, asisBlocks, pairedBlock) {
   const html = options.join('');
   if (select.innerHTML !== html) select.innerHTML = html;
   select.value = value;
-  select.title = pairedBlock ? '비교 중: ' + pairedBlock.title : '비교할 기존 SQL 이 없습니다 (신규 쿼리)';
+  select.classList.toggle('none', !pairedBlock);
+  select.title = pairedBlock ? '비교 중: ' + pairedBlock.title : '비교할 기존 SQL 을 고르면 왼쪽에 나란히 보입니다';
 }
 
 /**
@@ -324,6 +326,7 @@ function refreshPairedBlocks() {
     const asisBlock = findPairedAsisBlock(tobeBlock, order, asisBlocks);
     const element = tobeBlock.element;
     fillPairSelect(element.querySelector('[data-pair-sel]'), tobeBlock, order, asisBlocks, asisBlock);
+    element.querySelector('[data-pair-t]').textContent = asisBlock ? ' · ' + asisBlock.title : '';
     // 고른 블록이 없어진 경우에만 안내를 띄웁니다 ('없음'을 고른 경우는 왼쪽 칸 자체를 숨김)
     const lostPair = !asisBlock && !!tobeBlock.asisId;
     element.classList.toggle('no-pair', !asisBlock && !lostPair);

@@ -17,6 +17,7 @@
 | 1 | `README.md` 의 **코드 규칙 0번** | 이 저장소의 최상위 원칙(사람이 읽고 고칠 수 있는 코드) |
 | 2 | `README.md` 전체 | 폴더 구조, 상태 모델, 데이터 포맷, SQL 탭·이력 |
 | 3 | 이 문서 | 최근 작업 내역과 남은 일 |
+| (필요할 때) | `DB_PLAN.md` | 서버·DB 버전 검토 (아직 작업 안 함) |
 
 ### 반드시 지킬 것 (어기면 앱이 통째로 깨집니다)
 
@@ -327,6 +328,20 @@ grep -rn "지운이름" js/ index.html
 - 줄이 `.tabs`의 `border-bottom`이라 `.scr-head`의 양옆 여백(32px, 좁은 화면 16px)만큼 짧았음 → 줄을 `.scr-head`의 `border-bottom`으로 옮김.
   양옆 여백은 그대로(내용에만 적용). 고른 탭 밑줄은 `.tab`의 `margin-bottom: -1px`로 지금처럼 이 줄에 겹침
 
+### ⑲ 화면 요약 줄 — 스크롤하면 맨 위에 한 줄로 고정
+
+**배경(사용자 요청)**: 본문을 스크롤하면 위쪽 머리가 사라져 지금 어느 화면·탭을 보는지 다시 올라가 확인해야 했음.
+사용자와 정한 방식: 'B — 머리는 그대로 올라가고 얇은 요약 줄이 따로 내려옴'(머리 자체를 줄이는 A 는 높이가 바뀌며 덜컥거려서 뺌).
+
+- 내용: 화면 경로 · 상태 · 화면 탭(`data-mini-tab` → `showTab`) · 지금 보는 SQL/정의서 항목 이름과 ●(`data-mini-top` → 맨 위로)
+  - 알약 탭 줄 전체를 함께 고정할지는 답을 못 받아 **이름만** 넣음. 필요하면 요약 줄 아래에 알약 탭 줄을 붙이면 됨
+- 구조: `.scr` 맨 앞에 `.scr-mini`(sticky, 높이 0) → 안의 `.scr-mini-bar`가 `translateY(-110%)`에서 내려옴. 본문 자리가 바뀌지 않음
+- 표시 판단: `watchScreenHeadForMiniBar` — `IntersectionObserver`(root `#main`)가 `.scr-head .tabs`를 보고, 위로 완전히 지나가면 `.show`.
+  화면을 그릴 때마다 새로 만들고 이전 것은 `disconnect` (파일을 읽는 순간에는 만들지 않음)
+- 내용 갱신: `renderMiniBar` — `refreshIndicators`(입력마다) · `showTab` · `activateSqlTab` · `activateDefTab` · `changeStatus`에서 부름. 내용이 같으면 다시 넣지 않음
+  - SQL/항목 이름과 ● 는 알약 탭 줄 DOM 에서 읽음(`currentPillItem`), 화면 탭 ● 는 `.mk[data-m]`에서 읽음
+- 좁은 화면(860px 이하)은 지금 화면 탭만 남김
+
 ---
 
 ## 3. 새로 생긴 전역 심볼 (이름 충돌 주의)
@@ -366,6 +381,7 @@ grep -rn "지운이름" js/ index.html
 | `screen-defs.js` (신규, ⑮) | `UNNAMED_DEF_TITLE` `defGridTableId` `defItemHtml` `defPanelHtml` `readDefInputs` `defSignature` `isDefTabChanged` `refreshDefTabMarks` `ensureActiveDef` `renderDefTabs` `showActiveDefItem` `activateDefTab` `askNewDefItem` `addDefItem` `deleteDefItem` `saveDefItems` |
 | `screen-save.js` (⑮) | **삭제**: `saveGrid` |
 | `screen-sqltabs.js` (⑰) | `PILL_ARROW_SCROLL_RATIO` `PILL_DRAG_THRESHOLD` `pillTabsResizeObserver` `watchPillTabsSize` `updatePillTabOverflow` `scrollPillTabs` `swallowNextClick` `startPillTabsDrag` |
+| `screen.js` (⑲) | `miniBarObserver` `miniBarShellHtml` `currentPillItem` `miniBarHtml` `renderMiniBar` `watchScreenHeadForMiniBar` `scrollScreenToTop` |
 | `screen-grid.js` (신규, ⑯) | `gridSelection` `gridDrag` `gridColumnCount` `gridCellPosition` `gridCellInput` `clampGridPosition` `focusGridCell` `gridSelectionBounds` `isMultiCellSelection` `clearGridSelection` `setGridSelection` `gridSelectionText` `writeClipboardText` `clearGridSelectionCells` `handleGridMouseDown` `handleGridMouseOver` `handleGridMouseUp` `isCaretAtEdge` `gridTabTarget` `appendGridRow` `handleGridKeydown` `handleGridDateChange` `handleGridInput` `initGrids` · **옮겨 옴**(← `screen-save.js`): `addGridRow` `deleteGridRow` `parsePastedTable` `toDateInputValue` `handleGridPaste` `MAX_GRID_PASTE_UNDO` `gridSnapshot` `gridPasteHistoryOf` `clearGridPasteUndo` `restoreGridSnapshot` `handleGridUndoRedo` · **이름 변경**: `rememberGridBeforePaste` → `rememberGridState` |
 
 새 화면 클릭 속성(`handleScreenClick`, `screen-save.js`): `data-copy-ed` `data-copy-title` `data-sqltab` `data-sqltab-del` `data-sqltab-all` `data-sqllog` (+ `data-kind`).
@@ -443,6 +459,7 @@ grep -rn "지운이름" js/ index.html
   방향키·Enter(마지막 줄에서 줄 추가)·Tab, 한 칸 안에서 글자 드래그 선택이 여전히 되는지, 한글 입력 중 Enter, 날짜 `20260101` → `2026-01-01`·잘못된 날짜 빨간 표시
 - [x] **탭 줄 넘침(⑰)** — 사용자 확인: 잘 나옴 — 탭을 많이 추가했을 때 스크롤바 없이 ‹ › 가 나오고 끝에서 흐려지는지, 가려진 쪽이 흐리게 보이는지, 끌어서 스크롤 · 끈 뒤 탭이 눌리지 않는지 · 살짝 흔든 클릭은 탭이 골라지는지, 창 크기를 줄였다 늘렸을 때
 - [ ] **화면 머리 줄(⑱)** — 탭 아래 줄이 본문 양 끝까지 닿고, 고른 탭의 진한 밑줄이 그 줄에 딱 겹치는지, 양옆 여백은 그대로인지
+- [ ] **화면 요약 줄(⑲)** — 스크롤해 화면 탭 줄이 사라지면 요약 줄이 내려오는지(덜컥거림 없음), 다시 올리면 사라지는지, 요약 줄의 화면 탭·SQL 이름 클릭, SQL/항목 탭을 바꾸거나 이름을 고치면 바로 바뀌는지, 좁은 화면
 - [ ] **지워진 폴더** — 프로젝트 폴더를 지우고 앱 창을 누르면 '폴더가 없습니다' + 목록에서 제거, 메뉴 폴더를 지우면 트리에서 사라지는지
 
 ### 1차 — 확인 완료 (2026-10-27, 문제 없음)
@@ -463,6 +480,7 @@ grep -rn "지운이름" js/ index.html
 
 ### 2차에서 생긴 것
 
+- **DB 전환 검토** — 로컬 폴더 버전 + 서버(DB) 버전을 프로젝트마다 골라 쓰는 방안(Spring / Supabase / PocketBase 등). 검토만 했고 코드 변경 없음 → **`DB_PLAN.md`** 참고
 0. **정의서 표의 열 이름 확정** — 지금은 임시안(`GRID_COLUMNS`의 service.* · object.attrs/children · code.common/system). 사용자가 나중에 항목을 줄 예정
 
 1. ~~신규 SQL 탭의 [기존과 나란히 / 신규만] 단추가 필요한지~~ → **제거함** (⑬)

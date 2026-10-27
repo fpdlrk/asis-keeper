@@ -382,6 +382,24 @@ body.grid-dragging, body.grid-dragging * { user-select: none; cursor: cell; }
 table.grid input.invalid, table.grid input.invalid:focus { color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }
 
 /* ---- 9. 저장 바 ---- */
+/* 화면 요약 줄 (screen.js renderMiniBar) — 위쪽 머리가 스크롤로 사라지면 맨 위에 내려옴. 높이 0 자리에 겹쳐 그려 본문이 밀리지 않음 */
+.scr-mini { position: sticky; top: 0; z-index: 30; height: 0; }
+.scr-mini-bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 14px; height: 46px; padding: 0 32px;
+  border-bottom: 1px solid var(--line); background: rgba(255, 255, 255, .97); box-shadow: 0 2px 10px rgba(0, 0, 0, .06);
+  white-space: nowrap; transform: translateY(-110%); pointer-events: none; transition: transform .16s ease; }
+.scr-mini.show .scr-mini-bar { transform: none; pointer-events: auto; }
+.mini-path { flex: 0 1 auto; min-width: 60px; overflow: hidden; text-overflow: ellipsis; font-weight: 600; color: var(--ink); }
+.mini-st { flex: none; font-size: 12px; font-weight: 700; }
+.mini-tabs { flex: none; display: flex; gap: 2px; }
+.mini-tab { height: 28px; padding: 0 10px; border: 0; border-radius: 14px; background: none; color: var(--sub); font-size: 12.5px; cursor: pointer; }
+.mini-tab:hover { background: var(--soft); color: var(--ink); }
+.mini-tab.on { background: var(--acc-soft); color: var(--ink); font-weight: 600; }
+.mini-tab.dirty::after { content: ''; display: inline-block; width: 6px; height: 6px; margin-left: 5px; border-radius: 50%; background: var(--warn-dot); vertical-align: middle; }
+.mini-item { flex: 0 1 auto; min-width: 0; max-width: 300px; margin-left: auto; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px;
+  border: 1px solid var(--field); border-radius: 14px; background: #fff; color: var(--ink); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.mini-item:hover { border-color: var(--acc); }
+.mini-item span { overflow: hidden; text-overflow: ellipsis; }
+.mini-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn-dot); }
 .savebar { position: sticky; bottom: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 32px; border-top: 1px solid var(--line); background: #fff; }
 .sb-text { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 .sb-text b { color: var(--ink); }
@@ -479,6 +497,9 @@ table.grid input.invalid, table.grid input.invalid:focus { color: var(--bad); bo
   #app.has-screen { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; }
   .rside { max-height: 60vh; border-left: 0; border-top: 1px solid #eceef1; }
   .scr-head, .scr-body, .home { padding-left: 16px; padding-right: 16px; }
+  /* 좁은 화면: 요약 줄은 지금 탭 이름만 남겨 한 줄 유지 */
+  .scr-mini-bar { gap: 8px; padding: 0 16px; }
+  .mini-tab:not(.on) { display: none; }
   .savebar { padding: 10px 16px; }
   .vsep { display: none; }
 }

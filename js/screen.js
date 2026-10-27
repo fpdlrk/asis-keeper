@@ -157,6 +157,7 @@ function refreshIndicators() {
     + (asisDirty ? '<span class="muted">· 기존 내용은 ‘기존 SQL’ 탭에서 등록 후 잠급니다</span>' : '');
   $('#btnSaveAll').disabled = !dirtySections.length;
   $('#btnDiscard').disabled = !dirtySections.length && !asisDirty;
+  renderMiniBar();
 }
 
 /* ======================= 화면 열기 ======================= */
@@ -358,12 +359,78 @@ const sidePanelHtml = meta => `
     <div class="ed" data-id="memo"></div>
   </section>`;
 
+/* ======================= 화면 요약 줄 =======================
+   스크롤로 위쪽 머리(화면 탭 줄)가 사라지면 맨 위에 한 줄짜리 요약 줄이 내려옵니다.
+   머리는 그대로 올라가고 요약 줄은 본문 위에 겹쳐 나타나므로, 본문 자리가 바뀌지 않아 덜컥거리지 않습니다.
+   내용: 화면 경로 · 상태 · 화면 탭(누르면 이동) · 지금 보는 SQL/항목 이름(누르면 맨 위로) */
+
+/* 화면 머리를 지켜보는 감시자 (화면을 그릴 때마다 새로 만듦) */
+let miniBarObserver = null;
+
+/** 요약 줄 자리 — 높이 0 으로 맨 위에 붙어 있고, 안의 줄이 위에서 내려옴 */
+const miniBarShellHtml = () => '<div class="scr-mini" id="scrMini"><div class="scr-mini-bar" id="scrMiniBar"></div></div>';
+
+/**
+ * 지금 보는 SQL 블록 / 정의서 항목의 이름과 ● 여부 — 알약 탭 줄에서 읽음
+ * @returns {{title: string, dirty: boolean} | null} 알약 탭이 없는 탭(비교·첨부)이거나 항목이 없으면 null
+ */
+function currentPillItem() {
+  const screen = app.screen;
+  const barId = app.tab;
+  const activeId = isSqlTabBar(barId) ? screen.activeBlock[barId] : (barId in DEF_TABS ? screen.activeDef[barId] : '');
+  const tab = activeId ? $(`#tabs-${barId} [data-tab-bid="${activeId}"]`) : null;
+  return tab ? {title: tab.querySelector('.sqltab-t').textContent, dirty: tab.classList.contains('dirty')} : null;
+}
+
+/** 요약 줄 내용 HTML */
+function miniBarHtml() {
+  const screen = app.screen;
+  const statusIndex = statusIndexOf(screen.meta);
+  const tabs = SCREEN_TABS.map(([id, label]) => {
+    const mark = $(`.mk[data-m="${id}"]`);
+    const dirty = !!mark && mark.classList.contains('dirty');
+    return `<button type="button" class="mini-tab${id === app.tab ? ' on' : ''}${dirty ? ' dirty' : ''}" data-mini-tab="${id}">${label}</button>`;
+  }).join('');
+  const item = currentPillItem();
+  const itemHtml = item
+    ? `<button type="button" class="mini-item" data-mini-top title="맨 위로 (탭 목록 보기)">${item.dirty ? '<i class="mini-dot"></i>' : ''}<span>${escapeHtml(item.title)}</span></button>`
+    : '';
+  return `<span class="mini-path" title="${escapeHtml(screen.path.join(' / '))}">${escapeHtml(screen.path.join(' › '))}</span>`
+    + `<span class="mini-st" style="color: var(--s${statusIndex})">${escapeHtml(STATUS_LIST[statusIndex])}</span>`
+    + `<nav class="mini-tabs" aria-label="화면 탭">${tabs}</nav>${itemHtml}`;
+}
+
+/** 요약 줄 다시 그리기 — 탭을 바꾸거나 입력할 때마다 불림. 내용이 같으면 그대로 둠 */
+function renderMiniBar() {
+  const bar = $('#scrMiniBar');
+  if (!bar || !app.screen) return;
+  const html = miniBarHtml();
+  if (bar.innerHTML !== html) bar.innerHTML = html;
+}
+
+/** 화면 탭 줄이 스크롤로 위로 사라지면 요약 줄을 보여 줌 */
+function watchScreenHeadForMiniBar() {
+  if (miniBarObserver) miniBarObserver.disconnect();
+  const tabsRow = $('#main .scr-head .tabs');
+  if (!tabsRow) return;
+  miniBarObserver = new IntersectionObserver(([entry]) => {
+    const rootTop = entry.rootBounds ? entry.rootBounds.top : 0;
+    const scrolledAway = !entry.isIntersecting && entry.boundingClientRect.bottom <= rootTop;
+    const shell = $('#scrMini');
+    if (shell) shell.classList.toggle('show', scrolledAway);
+  }, {root: $('#main'), threshold: 0});
+  miniBarObserver.observe(tabsRow);
+}
+
+/** 요약 줄의 이름을 누르면: 맨 위로 (머리와 알약 탭 줄이 다시 보임) */
+const scrollScreenToTop = () => $('#main').scrollTo({top: 0, behavior: 'smooth'});
+
 /** 열린 화면 전체 그리기 */
 async function renderScreen() {
   const screen = app.screen;
   const meta = screen.meta;
   // SQL 이 하나도 없으면 빈 블록을 만들지 않고 '[+ SQL 추가]' 안내를 보여 줍니다 (renderSqlTabs)
-  $('#main').innerHTML = `<div class="scr">${screenHeaderHtml(meta)}${screenPanelsHtml(meta)}${saveBarHtml()}</div>`;
+  $('#main').innerHTML = `<div class="scr">${miniBarShellHtml()}${screenHeaderHtml(meta)}${screenPanelsHtml(meta)}${saveBarHtml()}</div>`;
   $('#rside').innerHTML = sidePanelHtml(meta);
   $('#rside').hidden = false;
   $('#app').classList.add('has-screen');
@@ -387,6 +454,7 @@ async function renderScreen() {
   showTab(app.tab);
   refreshIndicators();
   verifyIntegrity();
+  watchScreenHeadForMiniBar();
 }
 
 /** SQL 편집기(Ace) 설정 — 화면의 편집기와 [+ SQL 추가] 창의 편집기가 함께 씀 */
@@ -471,4 +539,5 @@ function showTab(tabId) {
   resizeAllEditors();
   if (tabId === 'tobe') refreshPairedBlocks();
   if (tabId === 'cmp') renderCompareTab();
+  renderMiniBar();
 }

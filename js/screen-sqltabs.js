@@ -235,6 +235,7 @@ function activateSqlTab(kind, blockId) {
   }
   if (kind === 'tobe') markChangedLines(blockId);
   scrollPillTabIntoView(kind, blockId);
+  renderMiniBar();
 }
 
 /**

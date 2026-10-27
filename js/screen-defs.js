@@ -118,6 +118,7 @@ function activateDefTab(tab, itemId) {
   app.screen.activeDef[tab] = itemId;
   showActiveDefItem(tab);
   scrollPillTabIntoView(tab, itemId);
+  renderMiniBar();
 }
 
 /* ======================= 추가 · 삭제 ======================= */

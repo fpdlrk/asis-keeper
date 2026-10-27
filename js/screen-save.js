@@ -322,6 +322,7 @@ async function changeStatus(statusIndex) {
       screen.meta.status = statusName;
       await saveMeta();
       $('#stSel').className = 'stpill s' + statusIndex;
+      renderMiniBar();
       $('#stlog').innerHTML = statusLogHtml(screen.meta);
       await renderTree();
     });
@@ -374,6 +375,8 @@ function handleScreenClick(e) {
   else if (data.del !== undefined) deleteGridRow(button);        // 표 줄 ✕
   else if (data.copyEd) copyEditorText(data.copyEd);             // 편집기 오른쪽 위 복사 아이콘
   else if (data.copyTitle !== undefined) copyBlockTitle(button); // SQL 블록 제목칸 복사 아이콘
+  else if (data.miniTab) showTab(data.miniTab);                     // 요약 줄의 화면 탭
+  else if (data.miniTop !== undefined) scrollScreenToTop();         // 요약 줄의 SQL/항목 이름 → 맨 위로
   else if (data.pillScroll) scrollPillTabs(data.pillScroll, Number(data.dir));   // 알약 탭 줄 ‹ ›
   else if (data.pillTab) activatePillTab(data.pillTab, data.bid);   // 알약 탭 고르기 (SQL · 정의서)
   else if (data.pillDel) deletePillTab(data.pillDel, data.bid);     // 알약 탭 ×

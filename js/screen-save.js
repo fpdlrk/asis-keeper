@@ -374,6 +374,7 @@ function handleScreenClick(e) {
   else if (data.del !== undefined) deleteGridRow(button);        // 표 줄 ✕
   else if (data.copyEd) copyEditorText(data.copyEd);             // 편집기 오른쪽 위 복사 아이콘
   else if (data.copyTitle !== undefined) copyBlockTitle(button); // SQL 블록 제목칸 복사 아이콘
+  else if (data.pillScroll) scrollPillTabs(data.pillScroll, Number(data.dir));   // 알약 탭 줄 ‹ ›
   else if (data.pillTab) activatePillTab(data.pillTab, data.bid);   // 알약 탭 고르기 (SQL · 정의서)
   else if (data.pillDel) deletePillTab(data.pillDel, data.bid);     // 알약 탭 ×
   else if (data.pillAll) showAllPillTabs(data.pillAll, button);     // 알약 탭 [▾ 전체]

@@ -309,6 +309,24 @@ grep -rn "지운이름" js/ index.html
   - 칸 색은 `td`에: `table.grid td:has(> input:focus)` — `:focus-within`을 쓰면 행 삭제(✕) 칸도 파래져서 입력칸에 커서가 있을 때만으로 좁힘
   - 색은 `:root` 토큰 `--grid-focus-bg` · `--grid-focus-line` · `--grid-sel-bg`
 
+### ⑰ 알약 탭 줄이 넘칠 때 — 스크롤바 숨김 + ‹ › + 흐림 + 끌어서 스크롤
+
+**배경(사용자 요청)**: 탭을 많이 추가하면 가로 스크롤바가 생겨 UI 가 틀어짐. 사용자와 정한 방식: '숨긴 스크롤바 + 양 끝 ‹ › + 흐림 표시' + '끌어서 스크롤'.
+
+- 공통 탭 줄(`screen-sqltabs.js`)이라 SQL · 서비스 · 오브젝트 · 코드분류 모두 적용
+- 탭 줄 모양: `.pilltabs-scroll` 안에 `[‹] .sqltabs-list [›]`. 스크롤바는 `scrollbar-width: none` + `::-webkit-scrollbar`로 숨김
+- `updatePillTabOverflow(barId)`: 넘치면 ‹ › 보이기(끝이면 흐리게 disabled), 가려진 쪽 끝을 `mask-image`로 흐리게(`.fade-l` / `.fade-r`)
+  - 부르는 곳: 탭 줄 그릴 때, 스크롤할 때(`onscroll`), 탭 이름 길이가 바뀔 때(`markPillTab`), 탭 줄 크기가 바뀔 때(`ResizeObserver` — 숨어 있던 화면 탭이 보일 때·창 크기 변경)
+  - `ResizeObserver`는 처음 쓸 때 만듦(`watchPillTabsSize`) — 파일을 읽는 순간 코드를 실행하지 않는 규칙 때문
+- ‹ ›: `data-pill-scroll` + `data-dir` → `scrollPillTabs`(탭 줄 너비 70% 부드럽게)
+- 끌기: `startPillTabsDrag` — 5px(`PILL_DRAG_THRESHOLD`) 이상 움직였을 때만 끌기. 놓은 직후 click 한 번은 `swallowNextClick`으로 막고(탭 고르기 방지),
+  click 이 안 오는 경우를 위해 `setTimeout 0`으로 바로 풀어 둠
+
+### ⑱ 화면 머리(`.scr-head`)의 탭 아래 줄을 본문 폭 끝까지
+
+- 줄이 `.tabs`의 `border-bottom`이라 `.scr-head`의 양옆 여백(32px, 좁은 화면 16px)만큼 짧았음 → 줄을 `.scr-head`의 `border-bottom`으로 옮김.
+  양옆 여백은 그대로(내용에만 적용). 고른 탭 밑줄은 `.tab`의 `margin-bottom: -1px`로 지금처럼 이 줄에 겹침
+
 ---
 
 ## 3. 새로 생긴 전역 심볼 (이름 충돌 주의)
@@ -347,6 +365,7 @@ grep -rn "지운이름" js/ index.html
 | `screen-sqltabs.js` (⑮) | `isSqlTabBar` `pillTabsBarHtml` `pillTabHtml` `renderPillTabs` `markActivePillTab` `scrollPillTabIntoView` `markPillTab` `showAllPillTabs` `activatePillTab` `deletePillTab` `addPillTab` `logItemsHtml` `logListKey` `itemLogHtml` `findLogTarget` `saveItemLog` · **삭제**: `sqlTabsBarHtml` `sqlTabHtml` `sqlTabToolsHtml` `showAllSqlTabs` `sqlLogItemsHtml` `sqlLogHtml` `saveSqlLog` |
 | `screen-defs.js` (신규, ⑮) | `UNNAMED_DEF_TITLE` `defGridTableId` `defItemHtml` `defPanelHtml` `readDefInputs` `defSignature` `isDefTabChanged` `refreshDefTabMarks` `ensureActiveDef` `renderDefTabs` `showActiveDefItem` `activateDefTab` `askNewDefItem` `addDefItem` `deleteDefItem` `saveDefItems` |
 | `screen-save.js` (⑮) | **삭제**: `saveGrid` |
+| `screen-sqltabs.js` (⑰) | `PILL_ARROW_SCROLL_RATIO` `PILL_DRAG_THRESHOLD` `pillTabsResizeObserver` `watchPillTabsSize` `updatePillTabOverflow` `scrollPillTabs` `swallowNextClick` `startPillTabsDrag` |
 | `screen-grid.js` (신규, ⑯) | `gridSelection` `gridDrag` `gridColumnCount` `gridCellPosition` `gridCellInput` `clampGridPosition` `focusGridCell` `gridSelectionBounds` `isMultiCellSelection` `clearGridSelection` `setGridSelection` `gridSelectionText` `writeClipboardText` `clearGridSelectionCells` `handleGridMouseDown` `handleGridMouseOver` `handleGridMouseUp` `isCaretAtEdge` `gridTabTarget` `appendGridRow` `handleGridKeydown` `handleGridDateChange` `handleGridInput` `initGrids` · **옮겨 옴**(← `screen-save.js`): `addGridRow` `deleteGridRow` `parsePastedTable` `toDateInputValue` `handleGridPaste` `MAX_GRID_PASTE_UNDO` `gridSnapshot` `gridPasteHistoryOf` `clearGridPasteUndo` `restoreGridSnapshot` `handleGridUndoRedo` · **이름 변경**: `rememberGridBeforePaste` → `rememberGridState` |
 
 새 화면 클릭 속성(`handleScreenClick`, `screen-save.js`): `data-copy-ed` `data-copy-title` `data-sqltab` `data-sqltab-del` `data-sqltab-all` `data-sqllog` (+ `data-kind`).
@@ -422,6 +441,8 @@ grep -rn "지운이름" js/ index.html
 - [ ] **SQL 탭 회귀** — 알약 탭·이력 공통화 뒤에도 SQL 탭 전환·×·▾ 전체·[+ SQL 추가]·SQL 이력이 그대로 되는지
 - [ ] **표 고도화(⑯)** — 여러 칸 드래그 → Ctrl+C → 메모장/엑셀에 붙여 탭으로 나뉘는지, 거꾸로·위로 끌기, Shift+클릭·Shift+방향키, Delete 로 범위 비우기 + Ctrl+Z,
   방향키·Enter(마지막 줄에서 줄 추가)·Tab, 한 칸 안에서 글자 드래그 선택이 여전히 되는지, 한글 입력 중 Enter, 날짜 `20260101` → `2026-01-01`·잘못된 날짜 빨간 표시
+- [x] **탭 줄 넘침(⑰)** — 사용자 확인: 잘 나옴 — 탭을 많이 추가했을 때 스크롤바 없이 ‹ › 가 나오고 끝에서 흐려지는지, 가려진 쪽이 흐리게 보이는지, 끌어서 스크롤 · 끈 뒤 탭이 눌리지 않는지 · 살짝 흔든 클릭은 탭이 골라지는지, 창 크기를 줄였다 늘렸을 때
+- [ ] **화면 머리 줄(⑱)** — 탭 아래 줄이 본문 양 끝까지 닿고, 고른 탭의 진한 밑줄이 그 줄에 딱 겹치는지, 양옆 여백은 그대로인지
 - [ ] **지워진 폴더** — 프로젝트 폴더를 지우고 앱 창을 누르면 '폴더가 없습니다' + 목록에서 제거, 메뉴 폴더를 지우면 트리에서 사라지는지
 
 ### 1차 — 확인 완료 (2026-10-27, 문제 없음)

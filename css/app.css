@@ -181,7 +181,8 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 
 /* ---- 6. 화면: 헤더 · 탭 · 패널 ---- */
 .scr { display: flex; flex-direction: column; min-height: 100%; }
-.scr-head { position: relative; padding: 22px 32px 0; }
+/* 탭 아래 줄은 머리 영역 전체 폭에 — 양옆 여백(padding)은 내용에만 두고 줄은 본문 끝까지 닿게 (탭의 -1px 아래 여백으로 고른 탭 밑줄이 이 줄에 겹침) */
+.scr-head { position: relative; padding: 22px 32px 0; border-bottom: 1px solid var(--line); }
 .row1 { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
 /* 상태 select: 옆의 입력칸(.inl)과 같은 모양 (회색 바탕·4px 모서리·28px), 오른쪽에 ▾ */
 .stpill { height: 28px; padding: 0 26px 0 8px; border: 1px solid transparent; border-radius: 4px; background-color: #f4f5f7; color: var(--ink); cursor: pointer;
@@ -219,7 +220,7 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .stlog .sep { color: var(--faint); }
 .stlog li.muted { white-space: normal; color: var(--sub); }
 
-.tabs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 2px; margin-top: 18px; border-bottom: 1px solid var(--line); }
+.tabs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 2px; margin-top: 18px; }
 .tab { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 42px; padding: 0; margin: 0 10px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent;
   background: transparent; color: var(--sub); font-size: 14px; font-weight: 500; cursor: pointer; }
 .tab:hover { color: var(--ink); }
@@ -269,7 +270,22 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .blocks > .blk.on { display: block; }
 /* 탭 줄 — 화면 탭(기존 SQL · 신규 SQL …)과 헷갈리지 않게 알약 모양 */
 .sqltabs { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.sqltabs-list { flex: 1; min-width: 0; display: flex; gap: 6px; padding: 2px 0 6px; overflow-x: auto; scrollbar-width: thin; }
+/* 탭 줄: 스크롤바는 숨기고(높이가 바뀌지 않게) 넘치면 양 끝에 ‹ › + 가려진 쪽 흐림 (screen-sqltabs.js updatePillTabOverflow) */
+.pilltabs-scroll { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
+.sqltabs-list { flex: 1; min-width: 0; display: flex; gap: 6px; padding: 2px 0; overflow-x: auto; scrollbar-width: none; }
+.sqltabs-list::-webkit-scrollbar { display: none; }
+.sqltabs-list.fade-l { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 32px); mask-image: linear-gradient(to right, transparent 0, #000 32px); }
+.sqltabs-list.fade-r { -webkit-mask-image: linear-gradient(to left, transparent 0, #000 32px); mask-image: linear-gradient(to left, transparent 0, #000 32px); }
+.sqltabs-list.fade-l.fade-r {
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 32px, #000 calc(100% - 32px), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 32px, #000 calc(100% - 32px), transparent 100%);
+}
+.sqltabs-list.dragging, .sqltabs-list.dragging * { cursor: grabbing; user-select: none; }
+.pilltabs-arrow { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0;
+  border: 1px solid var(--field); border-radius: 50%; background: #fff; color: var(--sub); font-size: 16px; line-height: 1; cursor: pointer; }
+.pilltabs-arrow:hover:not(:disabled) { background: var(--soft); color: var(--ink); }
+.pilltabs-arrow:disabled { opacity: .35; cursor: default; }
+.pilltabs-arrow[hidden] { display: none; }
 .sqltab { flex: none; display: inline-flex; align-items: center; max-width: 260px; height: 30px; border: 1px solid var(--field); border-radius: 15px; background: #fff; }
 .sqltab:hover { border-color: #c5cad1; }
 .sqltab.on { border-color: var(--acc); background: var(--acc); }

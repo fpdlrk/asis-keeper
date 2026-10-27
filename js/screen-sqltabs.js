@@ -2,7 +2,8 @@
    screen-sqltabs.js — 알약 탭 · SQL 탭 · 항목 이력
      - 알약 탭(공통): 기존 SQL · 신규 SQL · 서비스 · 오브젝트 · 코드분류 탭 안에서 항목 하나 = 탭 하나
          탭 줄 id = 'asis' | 'tobe' (SQL, 이 파일) | 'service' | 'object' | 'code' (정의서, screen-defs.js)
-         탭이 많으면 좌우로 스크롤(마우스 휠도 가로로 움직임)하고, 오른쪽 [▾ 전체]에서 골라 이동합니다.
+         탭이 넘치면: 스크롤바는 숨기고(UI 가 틀어지지 않게) 양 끝에 ‹ › 단추 + 가려진 쪽을 흐리게 표시.
+         마우스 휠(가로로 움직임) · 탭 줄을 끌기 · [▾ 전체] 목록으로도 이동합니다.
      - SQL 탭: 고른 탭의 SQL 블록만 보이고 나머지는 숨깁니다.
        블록은 모두 화면에 그대로 있으므로 등록·비교 탭·보고서는 예전처럼 화면 순서대로 읽습니다.
      - [+ SQL 추가] 창: 이름·SQL(필수) · 비교할 기존 SQL(신규만) · 이력(선택)
@@ -22,8 +23,10 @@ let sqlAddEditor = null;
 const isSqlTabBar = barId => barId === 'asis' || barId === 'tobe';
 
 /** 탭 줄 자리 HTML (내용은 renderPillTabs 가 채움) + 항목이 하나도 없을 때의 안내 */
-const pillTabsBarHtml = barId => `<div class="sqltabs">`
+const pillTabsBarHtml = barId => `<div class="sqltabs"><div class="pilltabs-scroll">`
+  + `<button type="button" class="pilltabs-arrow" data-pill-scroll="${barId}" data-dir="-1" aria-label="왼쪽 탭 보기" hidden>‹</button>`
   + `<div class="sqltabs-list" id="tabs-${barId}" role="tablist" aria-label="목록"></div>`
+  + `<button type="button" class="pilltabs-arrow" data-pill-scroll="${barId}" data-dir="1" aria-label="오른쪽 탭 보기" hidden>›</button></div>`
   + `<div class="sqltabs-tools" id="tabsTools-${barId}"></div></div>`
   + `<div class="sqltabs-empty" id="tabsEmpty-${barId}" hidden></div>`;
 
@@ -46,6 +49,9 @@ function renderPillTabs(barId, entries, {activeId, removable, addLabel, emptyTex
   if (!list) return;
   list.innerHTML = entries.map(entry => pillTabHtml(barId, entry, removable)).join('');
   list.onwheel = scrollTabsSideways;
+  list.onscroll = () => updatePillTabOverflow(barId);
+  list.onmousedown = startPillTabsDrag;
+  watchPillTabsSize(list);
   $('#tabsTools-' + barId).innerHTML =
     `<button type="button" class="btn btn-s btn-ghost" data-pill-all="${barId}" data-menu="pilltabs" aria-haspopup="menu"${entries.length ? '' : ' disabled'}>▾ 전체 ${entries.length}</button>`
     + (addLabel ? `<button type="button" class="btn btn-s" data-pill-add="${barId}">${escapeHtml(addLabel)}</button>` : '');
@@ -53,6 +59,7 @@ function renderPillTabs(barId, entries, {activeId, removable, addLabel, emptyTex
   empty.hidden = entries.length > 0;
   empty.textContent = emptyText;
   markActivePillTab(barId, activeId);
+  updatePillTabOverflow(barId);
 }
 
 /** 고른 탭 모양 맞추기 */
@@ -78,8 +85,89 @@ function markPillTab(barId, id, title, dirty) {
   if (label.textContent !== title) {
     label.textContent = title;
     tab.title = title;
+    updatePillTabOverflow(barId);   // 이름 길이가 바뀌면 넘침도 바뀔 수 있음
   }
   tab.classList.toggle('dirty', dirty);
+}
+
+/* ---- 넘칠 때: ‹ › 단추 · 흐림 표시 · 끌어서 스크롤 ---- */
+
+/* ‹ › 한 번에 움직일 비율 (탭 줄 너비 기준) */
+const PILL_ARROW_SCROLL_RATIO = 0.7;
+/* 끌어서 스크롤로 보는 최소 이동 거리(px) — 이보다 적게 움직이면 탭 클릭으로 봄 */
+const PILL_DRAG_THRESHOLD = 5;
+
+/* 탭 줄 크기 감시 (처음 쓸 때 만듦 — 파일을 읽는 순간에는 아무것도 실행하지 않는 규칙) */
+let pillTabsResizeObserver = null;
+
+/** 탭 줄 크기가 바뀌면(숨어 있던 화면 탭이 보일 때 · 창 크기 변경) ‹ › 를 다시 계산. 같은 요소를 여러 번 넣어도 한 번만 봄 */
+function watchPillTabsSize(list) {
+  if (!pillTabsResizeObserver) {
+    pillTabsResizeObserver = new ResizeObserver(entries => {
+      for (const entry of entries) updatePillTabOverflow(entry.target.id.replace('tabs-', ''));
+    });
+  }
+  pillTabsResizeObserver.observe(list);
+}
+
+/** 넘치는지 보고 ‹ › 단추(끝까지 갔으면 흐리게)와 양 끝 흐림 표시를 맞춤 */
+function updatePillTabOverflow(barId) {
+  const list = $('#tabs-' + barId);
+  if (!list) return;
+  const maxScroll = list.scrollWidth - list.clientWidth;
+  const overflowing = maxScroll > 1;
+  const atStart = list.scrollLeft <= 1;
+  const atEnd = list.scrollLeft >= maxScroll - 1;
+  list.parentElement.querySelectorAll('.pilltabs-arrow').forEach(arrow => {
+    arrow.hidden = !overflowing;
+    arrow.disabled = arrow.dataset.dir === '-1' ? atStart : atEnd;
+  });
+  list.classList.toggle('fade-l', overflowing && !atStart);
+  list.classList.toggle('fade-r', overflowing && !atEnd);
+}
+
+/** ‹ › 단추: 탭 줄 너비의 70% 만큼 부드럽게 이동 */
+function scrollPillTabs(barId, direction) {
+  const list = $('#tabs-' + barId);
+  if (list) list.scrollBy({left: direction * list.clientWidth * PILL_ARROW_SCROLL_RATIO, behavior: 'smooth'});
+}
+
+/** 끈 뒤에 따라오는 click 한 번을 막음 (끌기가 탭 고르기로 처리되지 않게) */
+const swallowNextClick = e => {
+  e.stopPropagation();
+  e.preventDefault();
+};
+
+/**
+ * 탭 줄을 마우스로 끌어 스크롤 (넘칠 때만)
+ * 조금(PILL_DRAG_THRESHOLD) 이상 움직였을 때만 끌기로 봐서, 살짝 흔들린 클릭은 그대로 탭 고르기가 됩니다.
+ */
+function startPillTabsDrag(e) {
+  const list = e.currentTarget;
+  if (e.button !== 0 || list.scrollWidth <= list.clientWidth) return;
+  const startX = e.clientX;
+  const startScroll = list.scrollLeft;
+  let dragging = false;
+
+  const onMove = moveEvent => {
+    const distance = moveEvent.clientX - startX;
+    if (!dragging && Math.abs(distance) < PILL_DRAG_THRESHOLD) return;
+    dragging = true;
+    list.classList.add('dragging');
+    list.scrollLeft = startScroll - distance;
+    moveEvent.preventDefault();
+  };
+  const onUp = () => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+    if (!dragging) return;
+    list.classList.remove('dragging');
+    // 놓은 직후의 click 은 막고, click 이 오지 않는 경우(탭 줄 밖에서 놓음)를 위해 바로 다음 차례에 풀어 둠
+    window.addEventListener('click', swallowNextClick, {capture: true, once: true});
+    setTimeout(() => window.removeEventListener('click', swallowNextClick, {capture: true}), 0);
+  };
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
 }
 
 /** 탭 줄 위에서 마우스 휠을 굴리면 가로로 움직임 */

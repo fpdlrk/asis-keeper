@@ -15,6 +15,9 @@ const MIN_UNLOCK_REASON_LENGTH = 5;
 /** meta.json 저장 */
 const saveMeta = () => writeJson(app.screen.dir, 'meta.json', app.screen.meta);
 
+/** 이력에 남길 사람: 화면 위 '작업자' 칸 (등록 전 입력값 포함), 비었으면 저장된 작업자 */
+const currentWorkerName = () => ($('#worker') ? $('#worker').value.trim() : '') || app.screen.meta.worker || '';
+
 /* ======================= 기존 내용 등록 후 잠그기 ======================= */
 
 /**
@@ -63,7 +66,7 @@ async function registerAsis() {
         const block = findSqlBlock('asis', input.id);
         await writeFile(screen.dir, block.file, new Blob([input.sql], {type: 'text/plain'}));
         block.title = input.title;
-        blockList.push({id: block.id, title: block.title, file: block.file});
+        blockList.push({id: block.id, title: block.title, file: block.file, ...blockLogOf(block)});
         screen.savedValues[editorId('asis', block.id)] = input.sql;
       }
       // 2) 잠금을 푼 뒤 삭제한 블록의 파일 지우기
@@ -130,9 +133,8 @@ async function unlockAsis() {
 
   try {
     await withBusy('잠금을 푸는 중…', async () => {
-      const changedBy = ($('#worker') ? $('#worker').value.trim() : '') || screen.meta.worker || '';
       screen.meta.asisUnlockLog = [...(screen.meta.asisUnlockLog || []),
-        {at: new Date().toISOString(), by: changedBy, reason: answer.value, relockedAt: ''}];
+        {at: new Date().toISOString(), by: currentWorkerName(), reason: answer.value, relockedAt: ''}];
       screen.meta.asisLocked = false;
       await saveMeta();
       showAsisAsUnlocked();
@@ -160,19 +162,13 @@ function showAsisAsLocked() {
   const screen = app.screen;
   setAsisEditorsReadOnly(true);
   $$('#blocks-asis .bt').forEach(input => { input.disabled = true; });
-  // ⋯ 메뉴(복사·삭제) → [복사] 버튼
-  $$('#blocks-asis [data-menu]').forEach(button => {
-    button.outerHTML = `<button type="button" class="btn btn-s" data-copy="${editorId('asis', button.dataset.bid)}">복사</button>`;
-  });
+  // ⋯ 메뉴(삭제)는 잠그면 쓸 수 없으므로 지움 (복사는 편집기·제목칸의 복사 아이콘으로)
+  $$('#blocks-asis [data-menu="asis"]').forEach(button => button.remove());
   $('#blocks-asis').classList.add('locked');
-  const addButton = $('[data-addblk="asis"]');
-  if (addButton) addButton.remove();
-  $('.drop[data-k="asis"]').classList.add('off');
+  renderSqlTabs('asis');   // 탭의 삭제(×)·[+ SQL 추가] 단추가 사라짐
   $('#asisBanner').className = 'banner lock';
   $('#asisBanner').innerHTML = lockedBannerHtml(screen.meta);
   $('#asisUnlockLog').innerHTML = unlockLogBannerHtml(screen.meta);   // '다시 잠금' 시각 반영
-  renderFileList('asis');
-  renderFileList('tobe');   // 신규 파일의 수정/동일 구분이 바뀔 수 있음
   verifyIntegrity();
   refreshPairedBlocks();
   refreshIndicators();
@@ -183,21 +179,15 @@ function showAsisAsUnlocked() {
   const screen = app.screen;
   setAsisEditorsReadOnly(false);
   $$('#blocks-asis .bt').forEach(input => { input.disabled = false; });
-  // [복사] 버튼 → ⋯ 메뉴(복사·삭제)
-  $$('#blocks-asis [data-copy]').forEach(button => {
-    const blockId = button.dataset.copy.slice(EDITOR_PREFIX.asis.length);
-    button.outerHTML = `<button type="button" class="icon" data-menu="asis" data-bid="${blockId}" aria-label="블록 메뉴 (복사, 삭제)">⋯</button>`;
+  // ⋯ 메뉴(삭제)를 블록 머리 끝에 다시 붙임
+  $$('#blocks-asis .blk').forEach(element => {
+    if (!element.querySelector('[data-menu="asis"]')) element.querySelector('.blk-h').insertAdjacentHTML('beforeend', asisBlockMenuHtml(element.dataset.id));
   });
   $('#blocks-asis').classList.remove('locked');
-  if (!$('[data-addblk="asis"]')) {
-    $('#blocks-asis').insertAdjacentHTML('afterend', '<button type="button" class="btn-add" data-addblk="asis">+ SQL 블록 추가</button>');
-  }
-  $('.drop[data-k="asis"]').classList.remove('off');
+  renderSqlTabs('asis');   // 탭의 삭제(×)·[+ SQL 추가] 단추를 다시 보여 줌
   $('#asisBanner').className = 'banner info';
   $('#asisBanner').innerHTML = unlockedBannerHtml(screen.meta);
   $('#asisUnlockLog').innerHTML = unlockLogBannerHtml(screen.meta);
-  renderFileList('asis');
-  renderFileList('tobe');
   verifyIntegrity();
   refreshPairedBlocks();
   refreshIndicators();
@@ -214,13 +204,6 @@ async function saveTextField(fieldId) {
   screen.savedValues[fieldId] = value;
 }
 
-/** 표 하나 저장 */
-async function saveGrid(gridId) {
-  const screen = app.screen;
-  const rows = readGridRows(gridId);
-  if (rows.length || screen.savedGrids[gridId] !== '[]') await writeJson(screen.dir, GRID_FILES[gridId], rows);
-  screen.savedGrids[gridId] = JSON.stringify(rows);
-}
 
 /** 등록 대기 파일 저장 */
 async function savePendingFiles(kind) {
@@ -256,7 +239,7 @@ async function saveTobeBlocks() {
       screen.savedValues[id] = value;
     }
     block.title = input.title;
-    blockList.push({id: block.id, title: block.title, file: block.file, rb: block.rb, asisId: block.asisId});
+    blockList.push({id: block.id, title: block.title, file: block.file, rb: block.rb, asisId: block.asisId, ...blockLogOf(block)});
   }
   for (const block of screen.removedTobeBlocks) {
     await removeFileQuietly(screen.dir, block.file);
@@ -284,8 +267,7 @@ async function saveSection(section) {
     await saveTextField('memo');
     await saveMeta();
   } else {
-    for (const fieldId of TAB_TEXT_FIELDS[section]) await saveTextField(fieldId);
-    for (const gridId of TAB_GRID_FIELDS[section] || []) await saveGrid(gridId);
+    await saveDefItems(section);   // 서비스 · 오브젝트 · 코드분류 (screen-defs.js)
   }
 }
 
@@ -334,8 +316,7 @@ async function changeStatus(statusIndex) {
   const statusName = STATUS_LIST[statusIndex];
   try {
     if (statusName !== statusOf(screen.meta)) {
-      const changedBy = ($('#worker') ? $('#worker').value.trim() : '') || screen.meta.worker || '';
-      screen.meta.statusLog = [...(screen.meta.statusLog || []), {status: statusName, at: new Date().toISOString(), by: changedBy}];
+      screen.meta.statusLog = [...(screen.meta.statusLog || []), {status: statusName, at: new Date().toISOString(), by: currentWorkerName()}];
     }
     await withBusy('상태를 저장하는 중…', async () => {
       screen.meta.status = statusName;
@@ -376,21 +357,6 @@ async function verifyIntegrity() {
 
 /* ======================= 이벤트 연결 ======================= */
 
-/** 표에 빈 줄 추가 */
-function addGridRow(gridId) {
-  $('#grid-' + gridId + ' tbody').insertAdjacentHTML('beforeend', gridRowHtml(gridId, []));
-  refreshIndicators();
-}
-
-/** 표의 줄 삭제 (마지막 줄이면 빈 줄 하나를 남김) */
-function deleteGridRow(button) {
-  const body = button.closest('tbody');
-  const gridId = button.closest('table').id.replace('grid-', '');
-  button.closest('tr').remove();
-  if (!body.children.length) body.insertAdjacentHTML('beforeend', gridRowHtml(gridId, []));
-  refreshIndicators();
-}
-
 /**
  * 화면 안 버튼 클릭 처리 (본문 #main 과 오른쪽 #rside 에 함께 연결)
  * 버튼은 화면을 열 때마다 새로 그려지므로, 바깥 요소 하나에서 data-* 속성으로 구분해 처리합니다.
@@ -406,21 +372,23 @@ function handleScreenClick(e) {
   else if (button.id === 'unlockAsis') unlockAsis();
   else if (data.add) addGridRow(data.add);                       // 표 [+ 행 추가]
   else if (data.del !== undefined) deleteGridRow(button);        // 표 줄 ✕
-  else if (data.copy) copyEditorText(data.copy);                 // [복사]
+  else if (data.copyEd) copyEditorText(data.copyEd);             // 편집기 오른쪽 위 복사 아이콘
+  else if (data.copyTitle !== undefined) copyBlockTitle(button); // SQL 블록 제목칸 복사 아이콘
+  else if (data.pillTab) activatePillTab(data.pillTab, data.bid);   // 알약 탭 고르기 (SQL · 정의서)
+  else if (data.pillDel) deletePillTab(data.pillDel, data.bid);     // 알약 탭 ×
+  else if (data.pillAll) showAllPillTabs(data.pillAll, button);     // 알약 탭 [▾ 전체]
+  else if (data.pillAdd) addPillTab(data.pillAdd);                  // [+ SQL 추가] · [+ 서비스 추가] …
+  else if (data.logSave) saveItemLog(data.logScope, data.kind, data.logSave);   // 항목 이력 [이력 저장]
   else if (data.from) importAsisSql(data.from);                  // [기존 SQL 가져오기]
-  else if (data.addblk) addSqlBlock(data.addblk);                // [+ SQL 블록 추가]
   else if (data.hist) loadHistoryVersion(data.hist);             // 변경 이력 [편집기로 불러오기]
   else if (data.pickdir) pickFolderFiles(data.pickdir);          // [폴더 선택]
-  else if (data.view) setTobeViewMode(data.view);                // 기존과 나란히 / 신규만
   else if (data.menu === 'tobe') {
     showMenuBelow(button, [
-      ['복사', () => copyEditorText(editorId('tobe', data.bid)), '', MENU_ICON.copy],
       ['기존과 비교 (창으로 보기)', () => openSqlDiffWindow(data.bid), '', MENU_ICON.compare],
       ['블록 삭제', () => deleteSqlBlock('tobe', data.bid), 'danger', MENU_ICON.trash]
     ]);
   } else if (data.menu === 'asis') {
     showMenuBelow(button, [
-      ['복사', () => copyEditorText(editorId('asis', data.bid)), '', MENU_ICON.copy],
       ['블록 삭제', () => deleteSqlBlock('asis', data.bid), 'danger', MENU_ICON.trash]
     ]);
   }
@@ -448,10 +416,19 @@ function initScreen() {
   });
   // 무엇이든 입력하면 탭 표시·저장 바 갱신. SQL 블록 제목은 입력하는 대로 대문자로 고침
   main.addEventListener('input', e => {
-    if (e.target.classList.contains('bt')) forceUpperCaseTitle(e.target);
+    // SQL 제목은 입력하는 대로 대문자로 (정의서 항목 이름은 그대로)
+    if (e.target.classList.contains('bt') && !e.target.classList.contains('def-title')) forceUpperCaseTitle(e.target);
     refreshIndicators();
   });
   sidePanel.addEventListener('input', refreshIndicators);
+  // 항목 이력 입력칸(SQL · 정의서): Ctrl+Enter 로 저장 (그냥 Enter 는 줄바꿈)
+  main.addEventListener('keydown', e => {
+    const itemId = e.target.dataset && e.target.dataset.logInput;
+    if (itemId && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      saveItemLog(e.target.dataset.logScope, e.target.dataset.kind, itemId);
+    }
+  });
   document.addEventListener('keydown', handleSaveShortcut);
   // 등록하지 않은 변경이 있는데 창을 닫으려 하면 브라우저 경고
   window.addEventListener('beforeunload', e => {

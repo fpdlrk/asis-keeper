@@ -17,6 +17,23 @@ async function getSubDir(dir, names, create) {
   return dir;
 }
 
+/** '폴더(파일)가 없다'는 오류인지 — 탐색기에서 지웠거나 옮긴 경우 */
+const isNotFoundError = error => !!error && error.name === 'NotFoundError';
+
+/**
+ * 폴더가 아직 디스크에 있는지
+ * 브라우저가 기억한 폴더 핸들은 폴더를 지워도 남아 있으므로, 실제로 읽어 봐야 압니다.
+ * '없음' 오류일 때만 false — 권한 같은 다른 문제로 목록에서 잘못 지우지 않도록 그 밖의 오류는 있다고 봅니다.
+ */
+async function folderExists(handle) {
+  try {
+    await handle.keys().next();
+    return true;
+  } catch (error) {
+    return !isNotFoundError(error);
+  }
+}
+
 /** 폴더 안에 이 이름의 하위 폴더가 있는지 */
 async function hasSubDir(dir, name) {
   try {

@@ -41,10 +41,10 @@ function showEditorMissing() {
   initProjects();
   initTree();
   initScreen();
+  initGrids();
   initDiff();
   initReport();
   initFonts();
-  settings.get(SETTING_KEYS.tobeView).then(mode => { if (mode === 'side' || mode === 'solo') tobeViewMode = mode; }).catch(() => {});
   settings.get(SETTING_KEYS.ignoreFormat).then(ignore => {
     app.ignoreFormat = ignore === true;
     $$('[data-ignore-format]').forEach(checkbox => { checkbox.checked = app.ignoreFormat; });

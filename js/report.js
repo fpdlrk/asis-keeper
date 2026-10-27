@@ -56,9 +56,9 @@ async function collectFileInfos(dir, folderPath) {
 /** 화면 하나의 보고서용 데이터 (등록된 내용만) */
 async function collectScreenReportData(screenInfo) {
   const {dir, meta} = screenInfo;
-  const data = {...screenInfo, statusName: statusOf(meta), texts: {}, grids: {}};
+  const data = {...screenInfo, statusName: statusOf(meta), texts: {}, defs: {}};
   for (const [fieldId, file] of Object.entries(TEXT_FIELD_FILES)) data.texts[fieldId] = await readText(dir, file) || '';
-  for (const [gridId, file] of Object.entries(GRID_FILES)) data.grids[gridId] = await readJson(dir, file, []);
+  for (const tab of Object.keys(DEF_TABS)) data.defs[tab] = await loadDefItems(dir, tab);   // 예전 파일만 있으면 '기본' 항목으로
   data.files = {
     asis: await collectFileInfos(dir, FILE_DIRS.asis),
     tobe: await collectFileInfos(dir, FILE_DIRS.tobe),
@@ -150,10 +150,7 @@ function screenReportHtml(data, index) {
   }
 
   // 정의서
-  const serviceParts = [['개요', texts.svOverview], ['속성정의', texts.svAttr], ['기능정의', texts.svFunc]].filter(([, text]) => text.trim());
-  if (serviceParts.length) html += section('서비스 정의') + serviceParts.map(([label, text]) => `<h4>${label}</h4>${reportTextHtml(text)}`).join('');
-  html += definitionSectionHtml(section, '오브젝트', 'obj', data.grids.obj, [['속성', texts.obAttr], ['하위 오브젝트', texts.obChild]]);
-  html += definitionSectionHtml(section, '코드분류', 'code', data.grids.code, [['공통코드내역관리', texts.cdCommon], ['시스템코드관리', texts.cdSystem]]);
+  for (const tab of Object.keys(DEF_TABS)) html += definitionSectionHtml(section, tab, data.defs[tab]);
 
   // 참고 파일
   if (data.files.attach.length) {
@@ -162,14 +159,26 @@ function screenReportHtml(data, index) {
   return html + '</div>';
 }
 
-/** 오브젝트·코드분류 영역 (표 + 글). 내용이 없으면 '' */
-function definitionSectionHtml(section, title, gridId, rows, textParts) {
-  const filledTexts = textParts.filter(([, text]) => text.trim());
-  if (!(rows || []).length && !filledTexts.length) return '';
-  const columns = GRID_COLUMNS[gridId].cols;
-  let html = section(title);
-  if ((rows || []).length) html += reportTableHtml(columns, rows.map(row => columns.map((_, i) => row[i] || '')));
-  return html + filledTexts.map(([label, text]) => `<h4>${label}</h4>` + reportTextHtml(text)).join('');
+/**
+ * 정의서 영역 (서비스 · 오브젝트 · 코드분류): 항목마다 이름 + 내용이 있는 표. 표가 모두 비었으면 ''
+ * 항목 이력은 내부 작업 기록이라 고객 전달용 보고서에는 넣지 않습니다.
+ */
+function definitionSectionHtml(section, tab, items) {
+  const {label, grids} = DEF_TABS[tab];
+  const hasRows = item => grids.some(([key]) => (item.grids[key] || []).length);
+  const filledItems = (items || []).filter(hasRows);
+  if (!filledItems.length) return '';
+  let html = section(label + ' 정의');
+  for (const item of filledItems) {
+    html += `<h4>${escapeHtml(item.title || UNNAMED_DEF_TITLE)}</h4>`;
+    for (const [key, gridLabel] of grids) {
+      const rows = item.grids[key] || [];
+      if (!rows.length) continue;
+      const columns = GRID_COLUMNS[`${tab}.${key}`].cols;
+      html += `<div class="cap">${escapeHtml(gridLabel)}</div>` + reportTableHtml(columns, rows.map(row => columns.map((_, i) => row[i] || '')));
+    }
+  }
+  return html;
 }
 
 /**

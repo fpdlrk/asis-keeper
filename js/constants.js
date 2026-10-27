@@ -35,27 +35,45 @@ const TOBE_HISTORY_DIR = 'tobe/history';
    값이 아예 없으면 예전 데이터 → 같은 순서의 기존 블록과 비교 (screen-data.js findPairedAsisBlock) */
 const NO_ASIS_PAIR = '';
 
-/* 글(텍스트) 입력란 id → 저장 파일 */
+/* 글(텍스트) 입력란 id → 저장 파일 (지금은 오른쪽 메모 하나. 정의서 탭의 글 입력란은 표로 바뀜 — DEF_TABS) */
 const TEXT_FIELD_FILES = {
-  memo: 'memo.md',
-  svOverview: 'service/overview.md',
-  svAttr: 'service/attributes.md',
-  svFunc: 'service/functions.md',
-  obAttr: 'object/attributes.md',
-  obChild: 'object/children.md',
-  cdCommon: 'code/common.md',
-  cdSystem: 'code/system.md'
+  memo: 'memo.md'
 };
-/* 표(그리드) id → 저장 파일 */
-const GRID_FILES = {obj: 'object/overview.json', code: 'code/overview.json'};
-/* 표의 열 이름과 입력 종류 (types: 열 번호 → input type) */
+
+/* ---- 정의서 탭 (서비스 · 오브젝트 · 코드분류) — screen-defs.js ----
+   탭 안에서 항목(예: 서비스 하나)마다 알약 탭을 만들고, 항목 본문에 표 여러 개 + 이력을 둡니다.
+   저장: <file> = [{id, title, grids: {표 키: [[칸, …], …]}, log?: [{at, by, text}]}]
+   grids: [표 키, 화면에 보일 이름] — 표의 열은 GRID_COLUMNS['<탭>.<표 키>'] */
+const DEF_TABS = {
+  service: {label: '서비스', file: 'service/items.json', grids: [['overview', '개요'], ['attrs', '속성정의'], ['funcs', '기능정의']]},
+  object: {label: '오브젝트', file: 'object/items.json', grids: [['overview', '개요'], ['attrs', '속성'], ['children', '하위 오브젝트']]},
+  code: {label: '코드분류', file: 'code/items.json', grids: [['overview', '개요'], ['common', '공통코드내역관리'], ['system', '시스템코드관리']]}
+};
+
+/* 표의 열 이름과 입력 종류 — 키: '<정의서 탭>.<표 키>' (types: 열 번호 → input type)
+   ※ 개요 두 개(object.overview, code.overview)를 뺀 나머지 열은 임시안입니다. 항목이 확정되면 여기만 고치면 됩니다.
+     열을 바꿔도 저장된 값은 열 순서대로 들어가므로, 열 순서를 바꿀 때는 기존 데이터를 확인하세요. */
 const GRID_COLUMNS = {
-  obj: {cols: ['이름', '화면표시명', '링크', '유형', '높이', '넓이'], types: {}},
-  code: {cols: ['코드분류', '코드분류명', '시작일', '종료일'], types: {2: 'date', 3: 'date'}}
+  'service.overview': {cols: ['서비스ID', '서비스명', '설명'], types: {}},
+  'service.attrs': {cols: ['속성ID', '속성명', '타입', '필수', '설명'], types: {}},
+  'service.funcs': {cols: ['기능ID', '기능명', '설명'], types: {}},
+  'object.overview': {cols: ['이름', '화면표시명', '링크', '유형', '높이', '넓이'], types: {}},
+  'object.attrs': {cols: ['속성명', '값', '설명'], types: {}},
+  'object.children': {cols: ['이름', '화면표시명', '유형', '설명'], types: {}},
+  'code.overview': {cols: ['코드분류', '코드분류명', '시작일', '종료일'], types: {2: 'date', 3: 'date'}},
+  'code.common': {cols: ['코드분류', '코드', '코드명', '정렬순서', '사용여부'], types: {}},
+  'code.system': {cols: ['코드분류', '코드', '코드명', '정렬순서', '사용여부'], types: {}}
 };
-/* 정의서 탭별로 들어 있는 글 입력란 / 표 */
-const TAB_TEXT_FIELDS = {service: ['svOverview', 'svAttr', 'svFunc'], object: ['obAttr', 'obChild'], code: ['cdCommon', 'cdSystem']};
-const TAB_GRID_FIELDS = {object: ['obj'], code: ['code']};
+
+/* 표로 바꾸기 전의 정의서 파일 — <탭>/items.json 이 없을 때 이 내용을 '기본' 항목 하나로 옮겨 보여 줍니다(screen-data.js loadDefItems).
+   글은 줄·칸으로 나눠 표에 넣습니다(붙여넣기와 같은 규칙). 예전 파일은 지우지 않습니다. */
+const LEGACY_DEF_FILES = {
+  service: {grid: null, texts: {overview: 'service/overview.md', attrs: 'service/attributes.md', funcs: 'service/functions.md'}},
+  object: {grid: 'object/overview.json', texts: {attrs: 'object/attributes.md', children: 'object/children.md'}},
+  code: {grid: 'code/overview.json', texts: {common: 'code/common.md', system: 'code/system.md'}}
+};
+/* 예전 내용을 옮겨 만든 항목의 id·이름 */
+const LEGACY_DEF_ITEM = {id: 'legacy', title: '기본'};
 
 /* 글자로 비교할 수 있는 파일 확장자 (나머지는 해시로만 비교) */
 const TEXT_FILE_PATTERN = /\.(sql|jsp|java|xml|js|jsx|ts|vue|html?|css|properties|txt|json|md|ya?ml|sh|bat|ftl|vm|tag|tld)$/i;

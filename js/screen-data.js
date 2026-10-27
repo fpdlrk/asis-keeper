@@ -101,3 +101,59 @@ async function findChangedFiles(dir, hashes, {stopAtFirst = false} = {}) {
   }
   return changed;
 }
+
+/* ======================= 정의서 항목 (서비스 · 오브젝트 · 코드분류) ======================= */
+
+/**
+ * 예전 글을 표의 줄로 바꾸기 — 칸이 표보다 많으면 남는 값은 마지막 칸에 이어 붙임(버리지 않음)
+ * @param {string} text 예전 글 입력란 내용
+ * @param {number} columnCount 표의 열 수
+ */
+function textToGridRows(text, columnCount) {
+  return splitTableText(text)
+    .filter(cells => cells.some(Boolean))
+    .map(cells => (cells.length <= columnCount
+      ? cells
+      : [...cells.slice(0, columnCount - 1), cells.slice(columnCount - 1).filter(Boolean).join(' ')]));
+}
+
+/** 빈 표 묶음 {표 키: []} */
+const emptyDefGrids = tab => Object.fromEntries(DEF_TABS[tab].grids.map(([key]) => [key, []]));
+
+/**
+ * 표로 바꾸기 전 파일(LEGACY_DEF_FILES)을 읽어 '기본' 항목 하나로 만들기
+ * @returns {Promise<object|null>} 예전 내용이 하나도 없으면 null
+ */
+async function readLegacyDefItem(dir, tab) {
+  const legacy = LEGACY_DEF_FILES[tab];
+  const grids = emptyDefGrids(tab);
+  if (legacy.grid) {
+    const rows = await readJson(dir, legacy.grid, []);
+    grids.overview = (Array.isArray(rows) ? rows : []).filter(cells => Array.isArray(cells) && cells.some(Boolean));
+  }
+  for (const [key, file] of Object.entries(legacy.texts)) {
+    grids[key] = textToGridRows(await readText(dir, file) || '', GRID_COLUMNS[`${tab}.${key}`].cols.length);
+  }
+  if (!Object.values(grids).some(rows => rows.length)) return null;
+  return {id: LEGACY_DEF_ITEM.id, title: LEGACY_DEF_ITEM.title, grids, log: []};
+}
+
+/**
+ * 정의서 탭의 항목 목록 읽기 (화면·보고서가 함께 씀)
+ *   <탭>/items.json 이 있으면 그것을, 없으면 예전 파일을 '기본' 항목으로 옮겨 보여 줌
+ *   (예전 내용도 이미 등록했던 내용이므로 등록된 것으로 봄. 다음 [등록] 때 items.json 으로 저장됨)
+ * @returns {Promise<{id, title, grids, log}[]>}
+ */
+async function loadDefItems(dir, tab) {
+  const saved = await readJson(dir, DEF_TABS[tab].file, null);
+  if (!Array.isArray(saved)) {
+    const legacyItem = await readLegacyDefItem(dir, tab);
+    return legacyItem ? [legacyItem] : [];
+  }
+  return saved.map(item => ({
+    id: item.id,
+    title: item.title || '',
+    grids: {...emptyDefGrids(tab), ...(item.grids || {})},
+    log: item.log || []
+  }));
+}

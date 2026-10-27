@@ -85,8 +85,12 @@ async function matchesSearch(dir, name, meta) {
   if (summary.includes(query)) return true;
   if (!meta) return false;
 
-  // 내용까지 찾을 파일: 글 입력란 + SQL 블록 (예전 구조 파일 포함)
-  const files = Object.values(TEXT_FIELD_FILES);
+  // 내용까지 찾을 파일: 메모 + 정의서(표 · 예전 글) + SQL 블록 (예전 구조 파일 포함)
+  const files = [
+    ...Object.values(TEXT_FIELD_FILES),
+    ...Object.values(DEF_TABS).map(def => def.file),
+    ...Object.values(LEGACY_DEF_FILES).flatMap(legacy => [legacy.grid, ...Object.values(legacy.texts)].filter(Boolean))
+  ];
   const sqlBlocks = meta.sqlBlocks || {};
   for (const kind of ['asis', 'tobe']) {
     for (const block of sqlBlocks[kind] || []) {
@@ -422,7 +426,7 @@ async function uniqueCopyName(destDir, baseName) {
 
 /**
  * 복사한 폴더(하위 포함) 안의 모든 화면에서 작업 기록을 지움 — 내용만 가져올 때 씀
- * 상태는 '요청'으로 돌리고, 상태 이력은 새로 시작하고, ASIS 잠금·해시·잠금 해제 이력은 지웁니다.
+ * 상태는 '요청'으로 돌리고, 상태 이력은 새로 시작하고, ASIS 잠금·해시·잠금 해제 이력·SQL 이력·정의서 항목 이력은 지웁니다.
  * (원본의 등록 기록이 복사본에도 남으면 현황 집계와 보고서가 같은 작업을 두 번 센 것처럼 보이기 때문)
  */
 async function resetCopiedWorkLog(dir) {
@@ -432,7 +436,17 @@ async function resetCopiedWorkLog(dir) {
     const cleaned = {...meta, status: STATUS_LIST[0], createdAt: now.toLocaleString('ko-KR'),
       statusLog: [{status: STATUS_LIST[0], at: now.toISOString()}]};
     for (const key of ['asisLocked', 'asisSavedAt', 'hashes', 'asisUnlockLog']) delete cleaned[key];
+    // SQL 마다 쌓은 이력도 작업 기록이므로 지움 (SQL 내용·이름·짝은 그대로)
+    if (cleaned.sqlBlocks) {
+      cleaned.sqlBlocks = Object.fromEntries(Object.entries(cleaned.sqlBlocks)
+        .map(([kind, blocks]) => [kind, (blocks || []).map(({log, ...rest}) => rest)]));
+    }
     await writeJson(dir, 'meta.json', cleaned);
+    // 정의서 항목마다 쌓은 이력도 지움 (이름·표는 그대로)
+    for (const def of Object.values(DEF_TABS)) {
+      const items = await readJson(dir, def.file, null);
+      if (Array.isArray(items)) await writeJson(dir, def.file, items.map(({log, ...rest}) => rest));
+    }
   }
   for (const name of await listChildFolders(dir)) await resetCopiedWorkLog(await dir.getDirectoryHandle(name));
 }
@@ -617,7 +631,38 @@ async function copyFolderPath(target, resetRootPath) {
 
 /* ======================= 이벤트 연결 ======================= */
 
+/* 폴더 다시 확인이 진행 중인지 (창 포커스가 연달아 와도 한 번만) */
+let folderCheckRunning = false;
+
+/**
+ * 탐색기에서 돌아왔을 때(창 포커스) 폴더가 아직 있는지 확인하고 트리를 새로 그림
+ *   - 프로젝트(루트) 폴더가 없어졌으면 알리고 목록에서 제거
+ *   - 열어 둔 화면 폴더가 없어졌으면 알리고 현황으로
+ *   - 그 밖에는 트리만 다시 그려, 탐색기에서 지우거나 추가한 메뉴·폴더를 반영
+ * 처리 중이거나 확인·입력 창이 떠 있을 때는 건너뜁니다.
+ */
+async function recheckFolders() {
+  if (!app.root || folderCheckRunning || isBusy() || closeActiveDialog) return;
+  folderCheckRunning = true;
+  try {
+    if (!(await folderExists(app.root))) {
+      await dropMissingProject(app.project);
+      return;
+    }
+    if (app.screen && !(await folderExists(app.screen.dir))) {
+      const name = lastOf(app.screen.path);
+      app.screen = null;
+      showHome();
+      toast(`‘${name}’ 폴더가 없어져 화면을 닫았습니다.`);
+    }
+    await renderTree();
+  } finally {
+    folderCheckRunning = false;
+  }
+}
+
 function initTree() {
+  window.addEventListener('focus', recheckFolders);
   // 검색: 입력이 멈추고 0.25초 뒤에 그리기 (글자마다 다시 그리지 않도록)
   $('#q').oninput = () => {
     clearTimeout(treeState.searchTimer);

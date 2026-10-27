@@ -120,8 +120,10 @@ async function openProject(project) {
       || (await project.handle.requestPermission({mode: 'readwrite'})) === 'granted';
     if (!granted) return toast('폴더 접근 권한이 허용되지 않았습니다.');
   } catch (error) {
+    if (isNotFoundError(error)) return dropMissingProject(project);
     return toastError('폴더를 열지 못했습니다', error);
   }
+  if (!(await folderExists(project.handle))) return dropMissingProject(project);   // 핸들은 남아 있어도 폴더가 지워졌을 수 있음
   app.project = project;
   renderProjectButton(false);
   await touchProject(project);
@@ -197,16 +199,35 @@ async function removeProject(project) {
   });
   if (!ok) return;
   if (!(await confirmLeaveScreen())) return;
+  if (await forgetProject(project)) toast('목록에서 제거했습니다.');
+}
+
+/**
+ * 프로젝트를 목록과 그 설정(접어 둔 폴더·탐색기 경로)에서 지움. 열려 있던 프로젝트면 닫음. 폴더·파일은 건드리지 않음
+ * @returns {Promise<boolean>} 목록 저장에 성공했는지
+ */
+async function forgetProject(project) {
   try {
     await saveProjects((await loadProjects()).filter(item => item.id !== project.id));
   } catch (error) {
-    return toastError('목록을 저장하지 못했습니다', error);
+    toastError('목록을 저장하지 못했습니다', error);
+    return false;
   }
   await settings.remove(SETTING_KEYS.closedFolders(project.id));
   await settings.remove(SETTING_KEYS.rootPath(project.id));
-
   if (app.project && app.project.id === project.id) await closeProject();
-  toast('목록에서 제거했습니다.');
+  return true;
+}
+
+/** 프로젝트 폴더가 디스크에서 없어졌을 때: 알리고 목록에서 지움 (열어 둔 화면의 입력은 저장할 곳이 없어 함께 사라짐) */
+async function dropMissingProject(project) {
+  if (!(await forgetProject(project))) return;
+  await askConfirm({
+    title: '폴더가 없습니다',
+    desc: `"${project.name}" 폴더를 찾을 수 없습니다.\n지워졌거나 다른 곳으로 옮겨진 것 같아 목록에서 제거했습니다.\n옮긴 것이라면 [프로젝트 추가]로 새 위치를 다시 등록해 주세요.`,
+    okText: '확인',
+    noCancel: true
+  });
 }
 
 /** 열린 프로젝트 닫기 (제거했을 때) — 트리와 본문을 처음 상태로 (오른쪽 영역·브레드크럼은 showHome 이 정리) */
@@ -275,6 +296,7 @@ async function restoreLastProject() {
   app.project = project;
   try {
     if ((await project.handle.queryPermission({mode: 'readwrite'})) === 'granted') {
+      if (!(await folderExists(project.handle))) return dropMissingProject(project);
       renderProjectButton(false);
       await setRootFolder(project.handle);
       return;

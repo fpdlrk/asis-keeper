@@ -3,7 +3,9 @@
 
    화면 관련 코드는 네 파일로 나뉩니다.
      screen.js        : 화면 상태, 열기/그리기, 편집기 만들기, 탭, 변경 감지(저장 바 표시)
-     screen-blocks.js : SQL 블록 (추가·삭제, 기존과 나란히 보기, 바뀐 줄 표시, 변경 이력)
+     screen-blocks.js : SQL 블록 (그리기·삭제, 기존과 나란히 보기, 바뀐 줄 표시, 변경 이력)
+     screen-sqltabs.js: 알약 탭(공통) · SQL 탭 ([+ SQL 추가] 창) · 항목 이력(공통)
+     screen-defs.js   : 정의서 탭 (서비스 · 오브젝트 · 코드분류 — 항목마다 탭 · 표 · 이력)
      screen-files.js  : 파일 목록 (끌어다 놓기, 저장 경로, 신규/수정/동일 표시)
      screen-save.js   : 등록 · 잠그기 · 상태 변경 · 원본 무결성 확인, 화면 이벤트 연결
 
@@ -25,13 +27,13 @@ const SAVE_SECTIONS = [
 
 /* ---- 편집기 ----
    편집기 id 규칙
-     글 입력란: TEXT_FIELD_FILES 의 키 (memo, svOverview …)
+     글 입력란: TEXT_FIELD_FILES 의 키 (memo)
      SQL 블록 : 접두어 + 블록 id  →  a:기존 SQL  t:신규 SQL  r:(예전) 롤백 SQL  p:신규 탭 왼쪽의 기존 SQL(읽기 전용) */
 const EDITOR_PREFIX = {asis: 'a:', tobe: 't:', rollback: 'r:', pair: 'p:'};
 const editorId = (kind, blockId) => EDITOR_PREFIX[kind] + blockId;
 /* 글 입력란 높이(px). 여기에 없는 id 는 SQL 편집기 */
-const TEXT_EDITOR_HEIGHTS = {memo: 110, svOverview: 150, svAttr: 200, svFunc: 220, obAttr: 180, obChild: 180, cdCommon: 200, cdSystem: 200};
-const SQL_EDITOR_HEIGHT = 260;
+const TEXT_EDITOR_HEIGHTS = {memo: 110};
+const SQL_EDITOR_HEIGHT = 400;   // SQL 탭은 한 번에 하나만 보이므로 넉넉하게 (아래 모서리를 끌어 조절 가능)
 const ROLLBACK_EDITOR_HEIGHT = 120;
 
 /** 작업 정보(상단 한 줄) 입력칸 id = meta 의 키 */
@@ -46,19 +48,22 @@ function createScreenState(path, dir, meta) {
     dir,                  // 화면 폴더 핸들
     meta,                 // meta.json 내용
     initialValues: {},    // 편집기 id → 처음 그릴 때 넣을 값
-    grids: {},            // 표 id → 행 배열
     blocks: {asis: [], tobe: []},       // SQL 블록 정보
+    activeBlock: {asis: '', tobe: ''},  // 지금 보고 있는 SQL 탭(블록 id)
+    defItems: {},         // 정의서 탭 → 항목 [{id, title, grids, log}] (표의 지금 값은 화면에서 읽음, screen-defs.js)
+    savedDefItems: {},    // 정의서 탭 → 마지막으로 등록된 항목 목록 (변경 감지 · 이력 바로 저장용)
+    activeDef: {},        // 정의서 탭 → 지금 보고 있는 항목 id
     removedTobeBlocks: [],              // 삭제한 신규 블록 (등록할 때 파일도 지움)
     removedAsisBlocks: [],              // 잠금을 푼 뒤 삭제한 등록된 기존 블록 (다시 잠글 때 파일도 지움)
     savedFiles: {asis: [], tobe: [], attach: []},    // 등록된 파일 경로
     pendingFiles: {asis: [], tobe: [], attach: []},  // 등록 대기 파일 {file, path}
     editors: {},          // 편집기 id → 편집기 (Ace 또는 글 입력란 래퍼)
     savedValues: {},      // 편집기 id → 마지막으로 등록된 값 (변경 감지용)
-    savedGrids: {},       // 표 id → 마지막으로 등록된 JSON
     savedBlockOrder: {},  // 'asis'|'tobe' → 블록 순서·제목 JSON
     hasSavedTobe: false,  // 등록된 신규 SQL 이 있는지
     lineMarkers: {},      // 블록 id → 바뀐 줄 색칠 표시들
-    markTimers: {}        // 블록 id → 바뀐 줄 다시 계산 타이머
+    markTimers: {},       // 블록 id → 바뀐 줄 다시 계산 타이머
+    gridPasteHistory: {}  // 표 id → 붙여넣기 되돌리기·다시 실행 기록 {undo, redo} (Ctrl+Z / Ctrl+Y, screen-grid.js)
   };
 }
 
@@ -77,7 +82,7 @@ const isEditorChanged = id => {
 };
 
 /** 표의 지금 값 (빈 줄 제외) */
-const readGridRows = gridId => $$(`#grid-${gridId} tbody tr`)
+const readGridRowsOf = table => [...table.tBodies[0].rows]
   .map(row => [...row.querySelectorAll('input')].map(input => input.value.trim()))
   .filter(cells => cells.some(Boolean));
 
@@ -88,9 +93,8 @@ function isRegistered(section) {
   if (section === 'tobe') return screen.hasSavedTobe || screen.savedFiles.tobe.length > 0;
   if (section === 'attach') return screen.savedFiles.attach.length > 0;
   if (section === 'common') return !!(screen.savedValues.memo || '').trim();
-  const hasText = (TAB_TEXT_FIELDS[section] || []).some(id => (screen.savedValues[id] || '').trim());
-  const hasGrid = (TAB_GRID_FIELDS[section] || []).some(gridId => screen.savedGrids[gridId] && screen.savedGrids[gridId] !== '[]');
-  return hasText || hasGrid;
+  if (section in DEF_TABS) return (screen.savedDefItems[section] || []).length > 0;
+  return false;
 }
 
 /** 영역에 등록하지 않은 변경이 있는지 (탭의 ● 표시, 저장 바) */
@@ -104,9 +108,8 @@ function isDirty(section) {
     const fieldChanged = COMMON_FIELDS.some(field => $('#' + field) && $('#' + field).value.trim() !== (screen.meta[field] || ''));
     return fieldChanged || isEditorChanged('memo');
   }
-  const textChanged = (TAB_TEXT_FIELDS[section] || []).some(isEditorChanged);
-  const gridChanged = (TAB_GRID_FIELDS[section] || []).some(gridId => JSON.stringify(readGridRows(gridId)) !== screen.savedGrids[gridId]);
-  return textChanged || gridChanged;
+  if (section in DEF_TABS) return isDefTabChanged(section);
+  return false;
 }
 
 /** 화면 어디든 등록하지 않은 변경이 있는지 */
@@ -140,7 +143,10 @@ function refreshIndicators() {
   const attachLabel = $('.tab[data-t="attach"] .tl');
   if (attachLabel) attachLabel.textContent = '첨부' + (screen.savedFiles.attach.length ? ' ' + screen.savedFiles.attach.length : '');
   const tobeSummary = $('#tobeSum');
-  if (tobeSummary) tobeSummary.textContent = `SQL 블록 ${$$('#blocks-tobe .blk').length}개 · 파일 ${screen.savedFiles.tobe.length + screen.pendingFiles.tobe.length}개`;
+  if (tobeSummary) tobeSummary.textContent = `SQL ${$$('#blocks-tobe .blk').length}개`;
+  refreshSqlTabMarks('asis');
+  refreshSqlTabMarks('tobe');
+  for (const tab of Object.keys(DEF_TABS)) refreshDefTabMarks(tab);
 
   // 저장 바
   const dirtySections = SAVE_SECTIONS.filter(([section]) => isDirty(section));
@@ -162,12 +168,26 @@ function refreshIndicators() {
  */
 async function openScreen(path, reload) {
   if (!reload && !(await confirmLeaveScreen())) return;
+  let dir;
+  try {
+    dir = await getSubDir(app.root, path, false);
+  } catch (error) {
+    if (!isNotFoundError(error)) return toastError('화면을 열지 못했습니다', error);
+    // 탐색기에서 지웠거나 옮긴 폴더: 알리고 트리를 새로 그려 목록에서 없앰 (루트째 없어졌으면 프로젝트를 목록에서 제거)
+    toast(`‘${lastOf(path)}’ 폴더가 없습니다. 목록을 새로 고칩니다.`);
+    await recheckFolders();
+    return;
+  }
   await withBusy('화면을 여는 중…', async () => {
-    const dir = await getSubDir(app.root, path, false);
     const meta = await readJson(dir, 'meta.json', {});
     // 루트를 열 때 파일 구조 변환을 마쳤으므로, 이후 이 화면에 저장하는 파일은 새 구조
     if (!meta.filesV) meta.filesV = FILE_STRUCTURE_VERSION;
+    const previousScreen = app.screen;
     const screen = createScreenState(path, dir, meta);
+    if (reload && previousScreen) {   // '변경 취소' 뒤에도 보던 SQL 탭·정의서 항목 유지
+      screen.activeBlock = {...previousScreen.activeBlock};
+      screen.activeDef = {...previousScreen.activeDef};
+    }
     app.screen = screen;
     // 처음 보여 줄 탭: 기존 내용이 아직 없으면 기존 SQL, 등록했으면 신규 SQL
     if (!reload) app.tab = meta.asisLocked ? 'tobe' : 'asis';
@@ -180,7 +200,10 @@ async function openScreen(path, reload) {
       screen.initialValues[editorId('tobe', block.id)] = block.sql;
       screen.initialValues[editorId('rollback', block.id)] = block.rbText;
     }
-    for (const [gridId, file] of Object.entries(GRID_FILES)) screen.grids[gridId] = await readJson(dir, file, []);
+    for (const tab of Object.keys(DEF_TABS)) {
+      screen.defItems[tab] = await loadDefItems(dir, tab);
+      screen.savedDefItems[tab] = JSON.parse(JSON.stringify(screen.defItems[tab]));   // 등록된 상태 (따로 복사해 둠)
+    }
     for (const kind of Object.keys(FILE_DIRS)) screen.savedFiles[kind] = await listFilesDeep(dir, FILE_DIRS[kind]);
 
     homeRenderSeq++;   // 그리던 현황(대시보드)이 있으면 멈춤
@@ -192,23 +215,38 @@ async function openScreen(path, reload) {
 
 /* ======================= 화면 그리기 ======================= */
 
-/** 글 입력란 + [복사] 버튼 */
-const textFieldHtml = (fieldId, label) => `<div class="fld"><div class="fld-h"><span class="fld-l">${label}</span>`
-  + `<button type="button" class="btn btn-s btn-ghost" data-copy="${fieldId}">복사</button></div><div class="ed" data-id="${fieldId}"></div></div>`;
+/**
+ * 마우스를 올리면 나타나는 복사 아이콘 버튼 (SQL 편집기 · SQL 블록 제목칸)
+ * 글 입력란의 [복사] 버튼(data-copy)과 속성 이름을 나눠, 어느 단추인지 코드에서 헷갈리지 않게 함
+ * @param {string} dataAttr 'data-copy-ed="편집기 id"' 또는 'data-copy-title'
+ */
+const hoverCopyButtonHtml = dataAttr =>
+  `<button type="button" class="copy-hover" ${dataAttr} title="복사" aria-label="복사">${MENU_ICON.copy}</button>`;
 
-/** 표의 한 줄 */
-function gridRowHtml(gridId, cells) {
-  const {cols, types} = GRID_COLUMNS[gridId];
-  const inputs = cols.map((col, i) => `<td><input type="${types[i] || 'text'}" aria-label="${col}" value="${escapeHtml(cells[i] || '')}"></td>`).join('');
+/**
+ * 표의 한 줄
+ * @param {string} columnsKey GRID_COLUMNS 의 키 (예: 'service.attrs')
+ */
+function gridRowHtml(columnsKey, cells) {
+  const {cols, types} = GRID_COLUMNS[columnsKey];
+  // 날짜 칸도 글 입력칸으로 둡니다 — 20260101 처럼 숫자만 쳐도 칸을 떠날 때 2026-01-01 로 맞춤(screen-grid.js),
+  // 브라우저 날짜 입력칸은 방향키·범위 선택·복사와 함께 쓰기 어렵기 때문
+  const typeAttrs = type => (type === 'date' ? ' data-type="date" inputmode="numeric" placeholder="예: 20260101"' : '');
+  const inputs = cols.map((col, i) => `<td><input type="text" aria-label="${col}"${typeAttrs(types[i])} value="${escapeHtml(cells[i] || '')}"></td>`).join('');
   return `<tr>${inputs}<td><button type="button" class="icon" data-del aria-label="행 삭제">✕</button></td></tr>`;
 }
 
-/** 표 전체 + [+ 행 추가] (행이 없으면 빈 줄 하나) */
-function gridHtml(gridId, rows) {
-  const header = GRID_COLUMNS[gridId].cols.map(col => `<th>${col}</th>`).join('');
-  const body = (rows && rows.length ? rows : [[]]).map(cells => gridRowHtml(gridId, cells)).join('');
-  return `<div class="gridwrap"><table class="grid" id="grid-${gridId}"><thead><tr>${header}<th></th></tr></thead><tbody>${body}</tbody></table></div>`
-    + `<button type="button" class="btn-add sm" data-add="${gridId}">+ 행 추가</button>`;
+/**
+ * 표 전체 + [+ 행 추가] (행이 없으면 빈 줄 하나)
+ * 같은 종류의 표가 화면에 여러 개 있을 수 있어(정의서 항목마다), 표마다 고유 id 를 주고 열 구성은 data-cols 로 찾습니다.
+ * @param {string} tableId    표 요소 id (화면 안에서 고유)
+ * @param {string} columnsKey GRID_COLUMNS 의 키
+ */
+function gridHtml(tableId, columnsKey, rows) {
+  const header = GRID_COLUMNS[columnsKey].cols.map(col => `<th>${col}</th>`).join('');
+  const body = (rows && rows.length ? rows : [[]]).map(cells => gridRowHtml(columnsKey, cells)).join('');
+  return `<div class="gridwrap"><table class="grid" id="${tableId}" data-cols="${columnsKey}"><thead><tr>${header}<th></th></tr></thead><tbody>${body}</tbody></table></div>`
+    + `<button type="button" class="btn-add sm" data-add="${tableId}">+ 행 추가</button>`;
 }
 
 /** 상태 이력 목록 — 한 줄 형식: [요청] 2026.10.20 · 홍길동 (바꾼 사람 기록이 없으면 이 화면의 작업자, 그것도 없으면 -) */
@@ -282,18 +320,15 @@ function screenPanelsHtml(meta) {
     <div class="panel" data-t="asis">
       <div class="banner ${locked ? 'lock' : 'info'}" id="asisBanner">${locked ? lockedBannerHtml(meta) : unlockedBannerHtml(meta)}</div>
       <div id="asisUnlockLog">${unlockLogBannerHtml(meta)}</div>
+      ${pillTabsBarHtml('asis')}
       <div id="blocks-asis" class="blocks${locked ? ' locked' : ''}">${screen.blocks.asis.map(block => sqlBlockHtml('asis', block, locked)).join('')}</div>
-      ${locked ? '' : '<button type="button" class="btn-add" data-addblk="asis">+ SQL 블록 추가</button>'}
-      <h2 class="sec">기존 파일</h2>${dropZoneHtml('asis', locked)}<ul class="files" id="list-asis"></ul>
     </div>
 
     <div class="panel" data-t="tobe">
       <div class="toolbar"><span class="muted" id="tobeSum"></span><span class="sp"></span>
-        ${ignoreFormatToggleHtml()}
-        <div class="seg" role="group" aria-label="보기 방식"><button type="button" data-view="side">기존과 나란히</button><button type="button" data-view="solo">신규만</button></div></div>
-      <div id="blocks-tobe" class="blocks v-${tobeViewMode}">${screen.blocks.tobe.map(block => sqlBlockHtml('tobe', block, false)).join('')}</div>
-      <button type="button" class="btn-add" data-addblk="tobe">+ SQL 블록 추가</button>
-      <h2 class="sec">신규 파일</h2>${dropZoneHtml('tobe')}<ul class="files" id="list-tobe"></ul>
+        ${ignoreFormatToggleHtml()}</div>
+      ${pillTabsBarHtml('tobe')}
+      <div id="blocks-tobe" class="blocks">${screen.blocks.tobe.map(block => sqlBlockHtml('tobe', block, false)).join('')}</div>
       <div id="hist"></div>
     </div>
 
@@ -302,9 +337,7 @@ function screenPanelsHtml(meta) {
       <div id="cmpBody"></div>
     </div>
 
-    <div class="panel narrow" data-t="service">${textFieldHtml('svOverview', '개요')}${textFieldHtml('svAttr', '속성정의')}${textFieldHtml('svFunc', '기능정의')}</div>
-    <div class="panel narrow" data-t="object"><div class="fld"><span class="fld-l">개요</span>${gridHtml('obj', screen.grids.obj)}</div>${textFieldHtml('obAttr', '속성')}${textFieldHtml('obChild', '하위 오브젝트')}</div>
-    <div class="panel narrow" data-t="code"><div class="fld"><span class="fld-l">개요</span>${gridHtml('code', screen.grids.code)}</div>${textFieldHtml('cdCommon', '공통코드내역관리')}${textFieldHtml('cdSystem', '시스템코드관리')}</div>
+    ${Object.keys(DEF_TABS).map(defPanelHtml).join('')}
     <div class="panel narrow" data-t="attach"><p class="muted">명세서, 화면 캡처 같은 참고 파일을 올리고 등록하세요. 보고서의 ‘참고 파일’에 실립니다.</p>${dropZoneHtml('attach')}<ul class="files" id="list-attach"></ul></div>
   </div>`;
 }
@@ -329,10 +362,7 @@ const sidePanelHtml = meta => `
 async function renderScreen() {
   const screen = app.screen;
   const meta = screen.meta;
-  // 블록이 하나도 없으면 빈 블록 하나로 시작 (잠긴 기존 SQL 은 새로 만들지 않음)
-  if (!meta.asisLocked && !screen.blocks.asis.length) screen.blocks.asis.push(createSqlBlock('asis', 1));
-  if (!screen.blocks.tobe.length) screen.blocks.tobe.push(createSqlBlock('tobe', 1));
-
+  // SQL 이 하나도 없으면 빈 블록을 만들지 않고 '[+ SQL 추가]' 안내를 보여 줍니다 (renderSqlTabs)
   $('#main').innerHTML = `<div class="scr">${screenHeaderHtml(meta)}${screenPanelsHtml(meta)}${saveBarHtml()}</div>`;
   $('#rside').innerHTML = sidePanelHtml(meta);
   $('#rside').hidden = false;
@@ -340,23 +370,31 @@ async function renderScreen() {
 
   // 편집기를 만들고, 지금 값을 "등록된 값" 으로 기억 (변경 감지 기준)
   $$('#main .ed, #rside .ed').forEach(createEditor);
-  for (const gridId of Object.keys(GRID_FILES)) screen.savedGrids[gridId] = JSON.stringify(screen.grids[gridId] || []);
   screen.savedBlockOrder.asis = blockOrderSignature('asis');
   screen.savedBlockOrder.tobe = blockOrderSignature('tobe');
   screen.hasSavedTobe = hasSavedTobeSql();
+  renderSqlTabs('asis');
+  renderSqlTabs('tobe');
+  for (const tab of Object.keys(DEF_TABS)) renderDefTabs(tab);
 
   await renderTobeHistory();
   for (const kind of Object.keys(FILE_DIRS)) {
     renderFileList(kind);
     setupDropZone(kind);
   }
-  $$('.seg [data-view]').forEach(button => button.classList.toggle('on', button.dataset.view === tobeViewMode));
   $$('.tab').forEach(button => { button.onclick = () => showTab(button.dataset.t); });
   if (!SCREEN_TABS.some(([id]) => id === app.tab)) app.tab = 'tobe';
   showTab(app.tab);
   refreshIndicators();
   verifyIntegrity();
 }
+
+/** SQL 편집기(Ace) 설정 — 화면의 편집기와 [+ SQL 추가] 창의 편집기가 함께 씀 */
+const sqlEditorOptions = readOnly => ({
+  mode: 'ace/mode/sql', theme: 'ace/theme/chrome', useWorker: false, showPrintMargin: false,
+  fontSize: '12.5px', tabSize: 4, fontFamily: codeFontStack,
+  readOnly, highlightActiveLine: !readOnly, highlightGutterLine: !readOnly
+});
 
 /**
  * 편집기 만들기: 글 입력란은 <textarea>, SQL 은 Ace 편집기
@@ -392,15 +430,12 @@ function createEditor(placeholder) {
   const readOnly = (id.startsWith(EDITOR_PREFIX.asis) && !!screen.meta.asisLocked) || id.startsWith(EDITOR_PREFIX.pair);
   placeholder.style.height = (id.startsWith(EDITOR_PREFIX.rollback) ? ROLLBACK_EDITOR_HEIGHT : SQL_EDITOR_HEIGHT) + 'px';
   placeholder.style.lineHeight = '22px';   // 시안: 코드 12.5px / 줄 높이 22px
-  const editor = ace.edit(placeholder, {
-    mode: 'ace/mode/sql', theme: 'ace/theme/chrome', useWorker: false, showPrintMargin: false,
-    fontSize: '12.5px', tabSize: 4, fontFamily: codeFontStack,
-    readOnly, highlightActiveLine: !readOnly, highlightGutterLine: !readOnly
-  });
+  const editor = ace.edit(placeholder, sqlEditorOptions(readOnly));
   editor.setValue(initialValue, -1);
   editor.session.getUndoManager().reset();   // 처음 넣은 값은 되돌리기 기록에서 제외
   screen.savedValues[id] = editor.getValue();
   if (readOnly) editor.renderer.$cursorLayer.element.style.display = 'none';
+  placeholder.insertAdjacentHTML('beforeend', hoverCopyButtonHtml(`data-copy-ed="${id}"`));   // 오른쪽 위 복사 아이콘
   editor.session.on('change', () => {
     refreshIndicators();
     if (id.startsWith(EDITOR_PREFIX.tobe)) scheduleLineMarks(id.slice(EDITOR_PREFIX.tobe.length));
@@ -408,6 +443,7 @@ function createEditor(placeholder) {
   new ResizeObserver(() => editor.resize()).observe(placeholder);   // 크기 조절(드래그) 시 다시 그림
   screen.editors[id] = editor;
   if (!readOnly) watchSqlPaste(editor, id);   // SQL 여러 개를 붙여넣으면 블록으로 나눌지 물음
+  if (!id.startsWith(EDITOR_PREFIX.pair)) enableSqlAutocomplete(editor);   // 비교용(늘 읽기 전용) 편집기만 빼고
   if (id.startsWith(EDITOR_PREFIX.tobe)) linkPairScroll(id.slice(EDITOR_PREFIX.tobe.length));
 }
 

@@ -13,6 +13,8 @@
   --s0: #6b7480; --s1: #2b6cb0; --s2: #b7791f; --s3: #2f855a;
   --ok: #22663f; --ok-bg: #e8f3ec; --warn: #8a4b00; --warn-bg: #fdf1e2; --warn-dot: #c46a00; --bad: #8f2f26; --bad-bg: #fbe9e6;
   --del: #fdecea; --add: #e6f4ea;
+  /* 표(그리드) 칸 색 — 입력 중인 칸 / 그 칸의 안쪽 선 / 범위로 선택한 칸 (screen-grid.js) */
+  --grid-focus-bg: #eaf3ff; --grid-focus-line: #9cc3f5; --grid-sel-bg: #dbe7f8;
   --sans: "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
   --mono: D2Coding, Consolas, monospace;
   --r: 6px; --r-l: 8px;
@@ -230,14 +232,23 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .scr-body { flex: 1; padding: 20px 32px 28px; }
 .panel.narrow { max-width: 900px; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
-.seg { display: inline-flex; border: 1px solid var(--field); border-radius: var(--r); overflow: hidden; }
-.seg button { height: 30px; padding: 0 12px; border: 0; background: #fff; color: #3d4248; font-size: 12px; cursor: pointer; }
-.seg button + button { border-left: 1px solid var(--field); }
-.seg button.on { background: var(--acc); color: #fff; }
 .sec { display: flex; align-items: baseline; gap: 8px; margin: 28px 0 10px; font-size: 15px; font-weight: 700; color: var(--ink); }
 .sec .muted { font-size: 12px; font-weight: 400; }
 .btn-add { width: 100%; height: 40px; border: 1px dashed #c9ced5; border-radius: var(--r-l); background: #fff; color: #3d4248; cursor: pointer; }
 .btn-add:hover { border-color: var(--acc); color: var(--acc); background: var(--acc-soft); }
+/* SQL 마다 쌓는 이력 (SQL 탭 본문 아래) — 목록(최근 것이 위) + 입력칸 */
+.wlog-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
+/* 한 항목 = 두 줄: 날짜 · 작업자 / 내용 */
+.wlog-list li { display: flex; flex-direction: column; gap: 3px; padding: 8px 12px; font-size: 13px; color: var(--text); }
+.wlog-list li + li { border-top: 1px solid #eceef1; }
+.wlog-list li.muted { color: var(--sub); }
+.wl-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); }
+.wl-meta .sep { color: var(--faint); }
+.wl-t { min-width: 0; white-space: pre-wrap; word-break: break-word; }
+.wlog-in { display: flex; align-items: flex-end; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line); background: var(--soft); }
+.wlog-in textarea { flex: 1; min-width: 0; min-height: 52px; padding: 6px 8px; border: 1px solid var(--field); border-radius: var(--r);
+  background: #fff; font: inherit; font-size: 13px; resize: vertical; }
+.wlog-in textarea:focus { border-color: var(--acc); outline: 0; }
 .btn-add.sm { width: auto; height: 32px; padding: 0 14px; margin-top: 8px; }
 .empty-box { padding: 40px 20px; border: 1px dashed #c9ced5; border-radius: var(--r-l); text-align: center; }
 .empty-box b { color: var(--ink); }
@@ -246,18 +257,53 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .blocks { display: flex; flex-direction: column; gap: 12px; margin-bottom: 10px; }
 .blk { border: 1px solid var(--line); border-radius: var(--r-l); overflow: hidden; background: #fff; }
 .blk-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
-.bt { flex: 1 1 200px; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid transparent; border-radius: var(--r); background: transparent; font-size: 15px; font-weight: 700; color: var(--ink); }
+/* 제목칸 묶음 — 마우스를 올리면 오른쪽 끝에 복사 아이콘(.copy-hover)이 나타남 */
+.bt-wrap { position: relative; flex: 1 1 200px; min-width: 0; display: flex; }
+.bt { flex: 1 1 auto; width: 100%; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid transparent; border-radius: var(--r); background: transparent; font-size: 15px; font-weight: 700; color: var(--ink); }
 .bt:hover { border-color: var(--field); background: #fff; }
 .bt:focus { border-color: var(--acc); background: #fff; outline: 0; }
 .bt:disabled { color: var(--ink); -webkit-text-fill-color: var(--ink); border-color: transparent; background: transparent; }
 .blk-h .sp { flex: 0 1 auto; }
+/* SQL 탭: 고른 탭의 블록만 보임 (screen-sqltabs.js) */
+.blocks > .blk { display: none; }
+.blocks > .blk.on { display: block; }
+/* 탭 줄 — 화면 탭(기존 SQL · 신규 SQL …)과 헷갈리지 않게 알약 모양 */
+.sqltabs { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.sqltabs-list { flex: 1; min-width: 0; display: flex; gap: 6px; padding: 2px 0 6px; overflow-x: auto; scrollbar-width: thin; }
+.sqltab { flex: none; display: inline-flex; align-items: center; max-width: 260px; height: 30px; border: 1px solid var(--field); border-radius: 15px; background: #fff; }
+.sqltab:hover { border-color: #c5cad1; }
+.sqltab.on { border-color: var(--acc); background: var(--acc); }
+.sqltab-b { display: inline-flex; align-items: center; gap: 6px; min-width: 0; height: 100%; padding: 0 12px; border: 0; border-radius: 15px;
+  background: none; color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; }
+.sqltab.on .sqltab-b { color: #fff; }
+.sqltab-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sqltab-dot { display: none; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn-dot); }
+.sqltab.dirty .sqltab-dot { display: inline-block; }
+.sqltab-x { flex: none; width: 22px; height: 22px; margin: 0 4px 0 -6px; padding: 0; border: 0; border-radius: 50%;
+  background: none; color: var(--faint); font-size: 15px; line-height: 1; cursor: pointer; }
+.sqltab-x:hover { background: var(--bad-bg); color: var(--bad); }
+.sqltab.on .sqltab-x { color: rgba(255, 255, 255, .7); }
+.sqltab.on .sqltab-x:hover { background: rgba(255, 255, 255, .16); color: #fff; }
+.sqltabs-tools { flex: none; display: flex; gap: 6px; }
+/* 정의서 항목 본문 (서비스 · 오브젝트 · 코드분류) — 표 여러 개 */
+.def-grids { padding: 14px 14px 2px; }
+.def-grids .fld { margin-bottom: 16px; }
+.sqltabs-empty { margin-bottom: 10px; padding: 28px 16px; border: 1px dashed #c9ced5; border-radius: var(--r-l); color: var(--sub); text-align: center; font-size: 13px; }
+/* 마우스를 올리면 나타나는 복사 아이콘 — SQL 편집기 오른쪽 위, 제목칸 오른쪽 끝 */
+.copy-hover { position: absolute; z-index: 10; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: 1px solid var(--field); border-radius: 4px; background: #fff; color: var(--sub); cursor: pointer;
+  opacity: 0; pointer-events: none; transition: opacity .12s; }
+.copy-hover:hover { color: var(--ink); background: var(--soft); }
+.copy-hover:focus-visible { opacity: 1; pointer-events: auto; }
+.ed > .copy-hover { top: 6px; right: 20px; }   /* 세로 스크롤바를 가리지 않게 */
+.bt-wrap > .copy-hover { top: 3px; right: 3px; }
+.bt-wrap.has-copy .bt { padding-right: 34px; }   /* 복사 아이콘 자리 (신규 SQL 제목만) */
+.ed:hover > .copy-hover, .bt-wrap:hover > .copy-hover { opacity: 1; pointer-events: auto; }
 .chg { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: #f1f3f6; color: #3d4248; }
 .chg.warn { background: var(--warn-bg); color: var(--warn); } .chg.ok { background: var(--ok-bg); color: var(--ok); }
 .chg:empty { display: none; }
 .blk > .ed { border: 0; border-radius: 0; }
 .blk-b { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.blocks.v-solo .blk-b { grid-template-columns: minmax(0, 1fr); }
-.blocks.v-solo .pane-l { display: none; }
 .pane { min-width: 0; }
 .pane-l { background: var(--soft); border-right: 1px solid var(--line); }
 .pane-h { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid #eceef1; font-size: 12px; font-weight: 600; color: var(--sub); white-space: nowrap; overflow: hidden; }
@@ -301,11 +347,23 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .gridwrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-l); }
 table.grid { border-collapse: collapse; width: 100%; min-width: 560px; }
 table.grid th { text-align: left; font-size: 12px; font-weight: 600; color: #3d4248; padding: 8px 10px; background: var(--soft); border-bottom: 1px solid var(--line); }
-table.grid td { padding: 0; border-top: 1px solid var(--line2); }
-table.grid input { width: 100%; height: 34px; border: 0; padding: 0 10px; background: transparent; font-weight: 400; }
-table.grid input:focus { outline: 2px solid var(--focus); outline-offset: -2px; background: #fff; }
+table.grid td { padding: 0; border-top: 1px solid var(--line2); background: #fff; }
+/* 엑셀처럼 칸 사이 세로 줄 */
+table.grid th + th, table.grid td + td { border-left: 1px solid var(--line2); }
+/* 칸 안의 입력칸은 칸과 한 몸처럼: 테두리·배경·그림자 없이 투명하게 → 칸 배경색(입력 중·범위 선택)이 그대로 보임
+   ※ 표가 정의서의 .fld 안에 있어 '.fld input[type=text]'(흰 배경·테두리·포커스 그림자)가 걸리므로, 그보다 우선하도록 [type="text"]까지 붙여 덮어씀 */
+table.grid input[type="text"] { width: 100%; height: 34px; padding: 0 10px; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--ink); font-weight: 400; }
+table.grid input[type="text"]:focus { outline: 0; border: 0; background: transparent; box-shadow: none; }
+/* 입력 중인 칸: 칸 전체를 연한 파란색 + 옅은 파란 안쪽 선 (엑셀의 '선택된 칸'처럼) */
+table.grid td:has(> input:focus) { background: var(--grid-focus-bg); box-shadow: inset 0 0 0 1px var(--grid-focus-line); }
 table.grid td:last-child { width: 40px; text-align: center; }
 table.grid .icon { width: 26px; height: 26px; border: 0; background: transparent; }
+/* 셀 범위 선택 (screen-grid.js) */
+table.grid td.cell-sel { background: var(--grid-sel-bg); }
+table.grid td.cell-sel:has(> input:focus) { background: var(--grid-focus-bg); }   /* 범위 안에서 커서가 있는 시작 칸은 입력 중 색으로 */
+body.grid-dragging, body.grid-dragging * { user-select: none; cursor: cell; }
+/* 날짜 칸에 날짜가 아닌 값 (입력 중에도 빨간 선이 보이게 :focus 까지) */
+table.grid input.invalid, table.grid input.invalid:focus { color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }
 
 /* ---- 9. 저장 바 ---- */
 .savebar { position: sticky; bottom: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 32px; border-top: 1px solid var(--line); background: #fff; }
@@ -334,6 +392,12 @@ table.grid .icon { width: 26px; height: 26px; border: 0; background: transparent
 .overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(31, 35, 40, .42); }
 .mbox { width: min(460px, 100%); max-height: 90vh; overflow: auto; padding: 22px 24px 20px; border-radius: 10px; background: #fff; box-shadow: 0 16px 40px rgba(0, 0, 0, .22); }
 .mbox.wide { width: min(1200px, 100%); display: flex; flex-direction: column; }
+/* SQL 추가 창 */
+.mbox.mid { width: min(760px, 100%); }
+.req { color: var(--bad); font-style: normal; }
+.sa-sql { height: 260px; line-height: 22px; border: 1px solid var(--field); border-radius: var(--r); }
+.sa-log { height: auto; padding: 8px 10px; font: inherit; font-size: 13px; resize: vertical; }
+.mbar-hint { margin: 0 auto 0 0; align-self: center; }
 .mbox h3 { margin: 0 0 4px; font-size: 16px; color: var(--ink); }
 .mbox .f { display: block; margin: 14px 0 6px; font-size: 12px; font-weight: 600; color: #3d4248; }
 .hint { margin: 4px 0 0; color: var(--sub); font-size: 12px; }
@@ -361,7 +425,7 @@ table.grid .icon { width: 26px; height: 26px; border: 0; background: transparent
 .opt-check input { width: 14px; height: 14px; margin: 0; accent-color: var(--acc); }
 .dfbody { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid var(--line2); padding-top: 12px; }
 
-#ctx { position: fixed; z-index: 60; min-width: 200px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-l); background: #fff; box-shadow: 0 8px 24px rgba(0, 0, 0, .16); }
+#ctx { position: fixed; z-index: 60; min-width: 200px; max-height: 70vh; overflow-y: auto; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-l); background: #fff; box-shadow: 0 8px 24px rgba(0, 0, 0, .16); }
 #ctx button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 8px 12px; border: 0; border-radius: 4px; background: none; text-align: left; white-space: nowrap; cursor: pointer; }
 #ctx button:hover, #ctx button:focus { background: var(--acc-soft); outline: 0; }
 #ctx button .ic { flex: none; color: var(--sub); }
@@ -390,8 +454,8 @@ table.grid .icon { width: 26px; height: 26px; border: 0; background: transparent
 
 /* ---- 12. 반응형 ---- */
 @media (max-width: 1100px) {
-  .blocks.v-side .blk-b { grid-template-columns: minmax(0, 1fr); }
-  .blocks.v-side .pane-l { border-right: 0; border-bottom: 1px solid var(--line); }
+  .blk-b { grid-template-columns: minmax(0, 1fr); }
+  .pane-l { border-right: 0; border-bottom: 1px solid var(--line); }
 }
 @media (max-width: 860px) {
   #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }

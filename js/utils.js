@@ -86,3 +86,21 @@ function toast(message) {
 
 /** 실패 알림: "저장 실패: 원인" 형태 */
 const toastError = (what, error) => toast(`${what}: ${error.message}`);
+
+/* ---- 글을 표 모양으로 나누기 (표 붙여넣기 · 예전 글을 표로 옮기기가 함께 씀) ---- */
+
+/* 탭이 없을 때 칸을 나누는 기준: 공백 2칸 이상 (공백 하나는 값 안의 띄어쓰기로 봄 — 예: '테스트 입니다') */
+const TABLE_TEXT_SPACE_SPLIT = /[ \u00a0\u3000]{2,}/;
+
+/**
+ * 글을 줄 × 칸으로 나누기
+ *   칸: 탭으로 나눔. 어느 줄에도 탭이 없으면 공백 2칸 이상으로 나눔
+ *   줄: 줄바꿈으로 나눔. 끝의 빈 줄은 버림 (엑셀에서 복사하면 끝에 줄바꿈이 붙음)
+ * @returns {string[][]} 줄마다 칸 값 배열 (글이 비었으면 [])
+ */
+function splitTableText(text) {
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+  while (lines.length && !lastOf(lines).trim()) lines.pop();
+  const useTab = lines.some(line => line.includes('\t'));
+  return lines.map(line => (useTab ? line.split('\t') : line.trim().split(TABLE_TEXT_SPACE_SPLIT)).map(cell => cell.trim()));
+}

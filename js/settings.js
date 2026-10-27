@@ -11,7 +11,6 @@ const SETTING_KEYS = {
   lastProjectId: 'lastProjectId',                // 마지막으로 연 프로젝트 id
   root: 'root',                                  // (예전) 루트 폴더 핸들 하나 — 처음 실행할 때 projects 로 옮깁니다
   fonts: 'fonts.v2',                             // 글꼴 설정 (v2: 예전 'fonts' 값은 무시 → 처음엔 시안 기본 글꼴)
-  tobeView: 'tobeView',                          // 신규 SQL 보기 방식 'side' | 'solo'
   ignoreFormat: 'diff.ignoreFormat',             // 비교할 때 공백·대소문자 무시 (true/false)
   // 아래 둘은 프로젝트 id 로 나눠 저장합니다 (폴더 이름으로 나누면 이름이 같은 다른 폴더끼리 설정이 섞임)
   closedFolders: projectId => 'closed:' + projectId, // 프로젝트별로 접어 둔 폴더 목록

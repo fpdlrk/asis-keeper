@@ -164,7 +164,8 @@ grep -rn "지운이름" js/ index.html
 
 - SQL 편집기 오른쪽 위, SQL 제목칸 오른쪽 끝에 복사 아이콘(`.copy-hover`) — `hoverCopyButtonHtml()` (`screen.js`)
   - 편집기: `createEditor`가 Ace 편집기를 만든 뒤 `data-copy-ed="<편집기 id>"` 버튼을 붙임 → `copyEditorText`
-  - 제목칸: `.bt`를 `.bt-wrap`으로 감싸고 `data-copy-title` 버튼 → `copyBlockTitle` (`screen-blocks.js`)
+  - 제목칸: `.bt`를 `.bt-wrap`으로 감싸고 `data-copy-input` 버튼 → `copyInputText` (`screen-blocks.js`, 예전 이름 `data-copy-title` · `copyBlockTitle`)
+  - SQL 정의 칸(⑳)도 `.copy-wrap` + `data-copy-input` 로 같은 함수. 칸이 비어 있으면 아이콘을 숨김(`:placeholder-shown`, 보이지 않는 placeholder " ")
     **신규 SQL 제목에만** 붙임(`blockTitleHtml(block, disabled, withCopy)`, `.bt-wrap.has-copy`). 기존 SQL 제목의 복사 아이콘은 사용자 요청으로 뺌
 - 신규·기존 블록 ⋯ 메뉴에서 '복사' 항목 삭제. 글 입력란(메모 등)의 [복사] 버튼은 그대로 둠
 - **잠긴 기존 SQL 블록 머리의 [복사] 버튼도 삭제**(편집기 복사 아이콘과 겹침). 이제 잠그면 ⋯ 메뉴를 지우기만 하고(`showAsisAsLocked`), 풀면 `asisBlockMenuHtml`로 다시 붙임(`showAsisAsUnlocked`) — 예전의 [복사] ↔ ⋯ 바꿔 끼우기는 없어짐
@@ -253,7 +254,7 @@ grep -rn "지운이름" js/ index.html
   - 붙여넣기 → Z → Z → Y → Shift+Z → Z → 새 붙여넣기(redo 비움) 순서를 가짜 표로 node 에서 돌려 확인함
 - 나누기·날짜 변환은 예시 입력(공백 구분 한 줄/세 줄, 탭·빈 칸, 날짜 6가지 형식)으로 node 에서 확인함. 화면에서의 동작은 미확인
 
-### ⑮ 서비스 · 오브젝트 · 코드분류 탭을 SQL 탭과 같은 UI 로 — 신규 파일 `js/screen-defs.js`
+### ⑮ 서비스 · 오브젝트 · 공통코드관리 탭을 SQL 탭과 같은 UI 로 — 신규 파일 `js/screen-defs.js`
 
 **배경(사용자 요청)**: 세 탭의 글 입력란(TEXTAREA)을 모두 표로 바꾸고, SQL 처럼 [+ 추가] → 탭, 탭마다 이력. "SQL 의 UI 를 그대로, 안의 내용만 다르게".
 표의 세부 열은 아직 정해지지 않아 **임시안으로 진행하고 나중에 받기로 함**.
@@ -276,7 +277,7 @@ grep -rn "지운이름" js/ index.html
   탭 줄 요소 id 가 `#sqltabs-<kind>` → **`#tabs-<id>`** 로 바뀜. 클릭 속성: `data-pill-tab` `data-pill-del` `data-pill-all` `data-pill-add` (+ `data-bid`)
 - **항목 이력 공통화**: `itemLogHtml(scope, kind, item)`(scope `'sql'|'def'`), `saveItemLog` ← `findLogTarget`(등록된 항목·파일 쓰기 함수 찾기).
   속성 `data-log-save` `data-log-input` `data-log-scope` `data-kind`, 목록 `data-log-list="<scope>-<kind>-<id>"`. `sqlLogHtml`/`saveSqlLog`는 없어짐
-- **표 공통화**: 같은 종류의 표가 여러 개 생기므로 `gridHtml(tableId, columnsKey, rows)` / `gridRowHtml(columnsKey, cells)`로 바꾸고
+- **표 공통화**: 같은 종류의 표가 여러 개 생기므로 `gridHtml(tableId, columnsKey, rows, title)`(제목 줄 오른쪽 끝에 [+ 행 추가], 제목 14px — 사용자 요청) / `gridRowHtml(columnsKey, cells)`로 바꾸고
   표에 `data-cols`를 둠. 행 추가(`data-add`=표 id) · 삭제 · 붙여넣기 · Ctrl+Z/Y 기록(`gridPasteHistory[표 id]`)이 모두 표 id 기준.
   `readGridRows(gridId)` → `readGridRowsOf(table)`
 - 지운 것: `GRID_FILES` `TAB_TEXT_FIELDS` `TAB_GRID_FIELDS` `textFieldHtml` `saveGrid` `screen.grids` `screen.savedGrids`, 글 입력란 7개
@@ -314,7 +315,7 @@ grep -rn "지운이름" js/ index.html
 
 **배경(사용자 요청)**: 탭을 많이 추가하면 가로 스크롤바가 생겨 UI 가 틀어짐. 사용자와 정한 방식: '숨긴 스크롤바 + 양 끝 ‹ › + 흐림 표시' + '끌어서 스크롤'.
 
-- 공통 탭 줄(`screen-sqltabs.js`)이라 SQL · 서비스 · 오브젝트 · 코드분류 모두 적용
+- 공통 탭 줄(`screen-sqltabs.js`)이라 SQL · 서비스 · 오브젝트 · 공통코드관리 모두 적용
 - 탭 줄 모양: `.pilltabs-scroll` 안에 `[‹] .sqltabs-list [›]`. 스크롤바는 `scrollbar-width: none` + `::-webkit-scrollbar`로 숨김
 - `updatePillTabOverflow(barId)`: 넘치면 ‹ › 보이기(끝이면 흐리게 disabled), 가려진 쪽 끝을 `mask-image`로 흐리게(`.fade-l` / `.fade-r`)
   - 부르는 곳: 탭 줄 그릴 때, 스크롤할 때(`onscroll`), 탭 이름 길이가 바뀔 때(`markPillTab`), 탭 줄 크기가 바뀔 때(`ResizeObserver` — 숨어 있던 화면 탭이 보일 때·창 크기 변경)
@@ -342,6 +343,48 @@ grep -rn "지운이름" js/ index.html
   - SQL/항목 이름과 ● 는 알약 탭 줄 DOM 에서 읽음(`currentPillItem`), 화면 탭 ● 는 `.mk[data-m]`에서 읽음
 - 좁은 화면(860px 이하)은 지금 화면 탭만 남김
 
+### ⑳ SQL 정의 · SQL 파라미터 표 (기존 · 신규 SQL 블록마다)
+
+**배경(사용자 요청)**: SQL 블록 위쪽에 'SQL 정의'(화면표시명 · 데이터소스 · 사용여부 · 버전 · 상태 · 커맨트 — 쿼리명은 SQL 제목과 같아 뺌),
+이력 바로 위에 'SQL 파라미터' 표(파라미터명 · 순서 · 파라미터 유형 · 인아웃 유형).
+
+- 칸 구성: `constants.js` — `SQL_INFO_FIELDS`(모두 글 입력칸, 커맨트는 여러 줄. 고르는 칸이 필요하면 `options` 를 주면 select 로 그려짐) · `GRID_COLUMNS['sql.params']`
+  - 상태 · 파라미터 유형 · 인아웃 유형 등은 값 목록이 정해지지 않아 글 입력칸. 정해지면 `options`로 바꾸면 됨
+- 저장: `meta.sqlBlocks[종류][]`에 `info: {displayName, …}` · `params: [[…]]` (값이 있을 때만). 기존은 잠그기, 신규는 [등록] 때
+- 변경 감지: `blockOrderSignature` 의 네 번째 값(`readSqlDefinition`) → 탭 ● · 저장 바
+- 잠긴 기존 SQL: 칸은 읽기 전용(`readonly`, select 는 `disabled`) — 고르기 · 복사는 됨. 표의 행 추가 · 삭제 단추 숨김.
+  `screen-grid.js`는 칸이 `readonly`면 붙여넣기 · 지우기 · 잘라 내기 · Enter 줄 추가를 막음. 잠금/풀기 때 `setAsisDefinitionReadOnly`
+  - SQL 정의는 해시(원본 확인) 대상이 아님 — meta.json 안에 있어 화면에서만 막음
+- 검색(트리)에 SQL 정의 · 파라미터 값 포함. **보고서 · 비교 탭에는 아직 안 나옴**
+
+### ㉑ 코드분류 탭 → 공통코드관리 · 정의 칸 · 공통코드 표
+
+**배경(사용자 요청)**: 탭 이름을 공통코드관리로, SQL 처럼 정의 칸(코드분류 · 코드분류명 · 시작일 · 종료일 · 자료변경여부 · 비고),
+'공통코드내역관리' 표를 '공통코드'로 바꾸고 열을 순번 · 코드 · 코드명 · 시작일 · 종료일 · 주코드 · 시스템코드 · 참조코드 · 어휘코드 · 코드약명 · 외국어명 · 비고로.
+
+- 탭 키 · 폴더는 그대로 `code` / `code/items.json` (이름만 바뀜 — `SCREEN_TABS` · `SAVE_SECTIONS` · `DEF_TABS.code.label`)
+- 정의 칸은 SQL 정의와 같은 함수로 그림: `screen.js` `infoFieldsHtml(fields, info, locked)` · `readInfoFields(container)` (SQL 은 `sqlInfoHtml`이 이것을 부름)
+  - 정의서 탭은 `DEF_TABS[탭].info`가 있을 때만 정의 칸이 생김. 저장 `items.json`의 `[].info` · 변경 감지 `defSignature` · 보고서(`정의` 표) 포함
+  - 칸 `type: 'date'`(시작일 · 종료일) — 표의 날짜 칸과 같은 규칙(`handleGridDateChange`가 표 밖의 날짜 칸도 맞춤)
+  - CSS 클래스 이름을 `.sqlinfo*` → `.infobox*`로 바꿈 (`.info`는 배너에 이미 있어 피함)
+- **'개요' 표는 없어짐** — 정의 칸과 항목이 같아서. 예전 개요 표(`items.json`의 `grids.overview`, 더 예전 `code/overview.json`)의
+  **첫 줄**을 정의 칸으로 옮겨 보여 줌(`screen-data.js` `overviewRowToInfo`, 순서는 `LEGACY_OVERVIEW_INFO`). 다음 [등록] 때 개요는 빠지고 info 로 저장. 둘째 줄부터는 옮기지 않음
+- **공통코드 표 열이 바뀜** — 예전 열(코드분류 · 코드 · 코드명 · 정렬순서 · 사용여부)로 넣은 값은 열 순서대로 새 열에 들어가 어긋나 보임(값은 그대로). 임시 데이터였다면 무시
+
+### ㉒ 서비스 탭 — 정의 칸 · 표 세 개 이름/열 변경 · 표의 고르는 칸
+
+**배경(사용자 요청)**: 서비스에도 정의 칸(트랜잭션명 · 커멘드클래스명 · 2PC지원여부 · 로그사용여부 · 비고, 모두 글 입력칸).
+표: 개요 → 메세지정의(속성타입 · 값타입 · 트랜잭션 속성명 · 기본값 · 비고), 속성정의 → 기능정의(기능구분 · 기능명 · 적용순서 · 요청메세지 이름 · 응답메세지 이름 · 결과트리반환),
+기능정의 → 권한제어(사용자 그룹)(사용자그룹ID · 사용자그룹명 · 적용여부 — 고르는 칸 적용/미적용, 기본 미적용).
+
+- 표 키는 그대로(`overview` = 메세지정의, `attrs` = 기능정의, `funcs` = 권한제어) — 사용자가 "이름 바꾸기"로 요청했고 저장 데이터와 맞추기 위함.
+  예전 열로 넣은 값은 열 순서대로 새 열에 들어가 어긋나 보임. 권한제어 셋째 칸에 '적용/미적용'이 아닌 예전 값이 있으면 '미적용'으로 보이고 탭에 ● 가 뜸
+- **표의 고르는 칸(select)** 새로 지원: `GRID_COLUMNS[키].types[열] = 'select'`, `options[열] = [기본값, …]`
+  - `screen.js`: `GRID_CELL_SELECTOR`('input, select') · `gridCellDefault` · `gridRowHtml`(목록에 없는 값은 기본값) · `readGridRowsOf`(모든 칸이 기본값인 줄 = 빈 줄)
+  - `screen-grid.js`: `isGridCellElement` · `isGridCellLocked` · `setGridCellValue`. 방향키는 칸 이동(값 변경 아님), 지우기 = 기본값,
+    목록에 없는 값을 붙여넣으면 기본값 + 알림. 범위 선택 · 복사 · 되돌리기 모두 select 포함
+- 추가 요청: 서비스 맨 아래에 '전처리' 표(`preprocess` — 옵션명 · 값 · 비고). 예전 항목은 빈 표로 시작(`emptyDefGrids`가 채움)
+
 ---
 
 ## 3. 새로 생긴 전역 심볼 (이름 충돌 주의)
@@ -366,7 +409,7 @@ grep -rn "지운이름" js/ index.html
 |---|---|
 | `fs.js` | `isNotFoundError` `folderExists` |
 | `screen.js` | `hoverCopyButtonHtml` `sqlEditorOptions` (+ 화면 상태에 `activeBlock`, `gridPasteHistory`) |
-| `screen-blocks.js` | `copyBlockTitle` `asisBlockMenuHtml` · **삭제**: `addSqlBlock`(→ `screen-sqltabs.js`로 옮김), `tobeViewMode`, `setTobeViewMode` |
+| `screen-blocks.js` | `copyInputText`(예전 `copyBlockTitle`) `asisBlockMenuHtml` · **삭제**: `addSqlBlock`(→ `screen-sqltabs.js`로 옮김), `tobeViewMode`, `setTobeViewMode` |
 | `settings.js` | **삭제**: `SETTING_KEYS.tobeView` |
 | `screen-save.js` | `currentWorkerName` `GRID_PASTE_SPACE_SPLIT` `parsePastedTable` `toDateInputValue` `handleGridPaste` `MAX_GRID_PASTE_UNDO` `gridSnapshot` `gridPasteHistoryOf` `rememberGridBeforePaste` `clearGridPasteUndo` `restoreGridSnapshot` `handleGridUndoRedo` |
 | `sql-complete.js` (신규) | `SQL_AUTOCOMPLETE_MIN_PREFIX` `SQL_WORD_PATTERN` `SQL_WORD_MIN_LENGTH` `SQL_COMPLETION_SCORE` `sqlKeywordsOf` `collectScreenSqlWords` `sqlKeywordCompleter` `sqlScreenWordCompleter` `enableSqlAutocomplete` |
@@ -382,9 +425,14 @@ grep -rn "지운이름" js/ index.html
 | `screen-save.js` (⑮) | **삭제**: `saveGrid` |
 | `screen-sqltabs.js` (⑰) | `PILL_ARROW_SCROLL_RATIO` `PILL_DRAG_THRESHOLD` `pillTabsResizeObserver` `watchPillTabsSize` `updatePillTabOverflow` `scrollPillTabs` `swallowNextClick` `startPillTabsDrag` |
 | `screen.js` (⑲) | `miniBarObserver` `miniBarShellHtml` `currentPillItem` `miniBarHtml` `renderMiniBar` `watchScreenHeadForMiniBar` `scrollScreenToTop` |
+| `constants.js` (⑳ ㉑) | `SQL_INFO_FIELDS` `LEGACY_OVERVIEW_INFO` |
+| `screen.js` (㉑ ㉒) | `infoFieldsHtml` `readInfoFields` `GRID_CELL_SELECTOR` `gridCellDefault` |
+| `screen-grid.js` (㉒) | `isGridCellElement` `isGridCellLocked` `setGridCellValue` |
+| `screen-data.js` (㉑) | `overviewRowToInfo` |
+| `screen-blocks.js` (⑳) | `sqlParamsTableId` `readSqlDefinition` `sqlDefinitionOf` `sqlInfoHtml` `sqlParamsHtml` `setAsisDefinitionReadOnly` |
 | `screen-grid.js` (신규, ⑯) | `gridSelection` `gridDrag` `gridColumnCount` `gridCellPosition` `gridCellInput` `clampGridPosition` `focusGridCell` `gridSelectionBounds` `isMultiCellSelection` `clearGridSelection` `setGridSelection` `gridSelectionText` `writeClipboardText` `clearGridSelectionCells` `handleGridMouseDown` `handleGridMouseOver` `handleGridMouseUp` `isCaretAtEdge` `gridTabTarget` `appendGridRow` `handleGridKeydown` `handleGridDateChange` `handleGridInput` `initGrids` · **옮겨 옴**(← `screen-save.js`): `addGridRow` `deleteGridRow` `parsePastedTable` `toDateInputValue` `handleGridPaste` `MAX_GRID_PASTE_UNDO` `gridSnapshot` `gridPasteHistoryOf` `clearGridPasteUndo` `restoreGridSnapshot` `handleGridUndoRedo` · **이름 변경**: `rememberGridBeforePaste` → `rememberGridState` |
 
-새 화면 클릭 속성(`handleScreenClick`, `screen-save.js`): `data-copy-ed` `data-copy-title` `data-sqltab` `data-sqltab-del` `data-sqltab-all` `data-sqllog` (+ `data-kind`).
+새 화면 클릭 속성(`handleScreenClick`, `screen-save.js`): `data-copy-ed` `data-copy-input` `data-sqltab` `data-sqltab-del` `data-sqltab-all` `data-sqllog` (+ `data-kind`).
 `data-addblk`는 이제 [+ SQL 추가] 창을 엽니다.
 
 스크립트 순서(`index.html`): `ace-bundle.js` → **`ace-ext-language_tools.js`** → … → `sql.js` → **`sql-complete.js`** → … → `screen-blocks.js` → **`screen-sqltabs.js`** → …
@@ -459,7 +507,10 @@ grep -rn "지운이름" js/ index.html
   방향키·Enter(마지막 줄에서 줄 추가)·Tab, 한 칸 안에서 글자 드래그 선택이 여전히 되는지, 한글 입력 중 Enter, 날짜 `20260101` → `2026-01-01`·잘못된 날짜 빨간 표시
 - [x] **탭 줄 넘침(⑰)** — 사용자 확인: 잘 나옴 — 탭을 많이 추가했을 때 스크롤바 없이 ‹ › 가 나오고 끝에서 흐려지는지, 가려진 쪽이 흐리게 보이는지, 끌어서 스크롤 · 끈 뒤 탭이 눌리지 않는지 · 살짝 흔든 클릭은 탭이 골라지는지, 창 크기를 줄였다 늘렸을 때
 - [ ] **화면 머리 줄(⑱)** — 탭 아래 줄이 본문 양 끝까지 닿고, 고른 탭의 진한 밑줄이 그 줄에 딱 겹치는지, 양옆 여백은 그대로인지
-- [ ] **화면 요약 줄(⑲)** — 스크롤해 화면 탭 줄이 사라지면 요약 줄이 내려오는지(덜컥거림 없음), 다시 올리면 사라지는지, 요약 줄의 화면 탭·SQL 이름 클릭, SQL/항목 탭을 바꾸거나 이름을 고치면 바로 바뀌는지, 좁은 화면
+- [x] **화면 요약 줄(⑲)** — 사용자 확인: 잘 나옴 — 스크롤해 화면 탭 줄이 사라지면 요약 줄이 내려오는지(덜컥거림 없음), 다시 올리면 사라지는지, 요약 줄의 화면 탭·SQL 이름 클릭, SQL/항목 탭을 바꾸거나 이름을 고치면 바로 바뀌는지, 좁은 화면
+- [ ] **SQL 정의 · 파라미터(⑳)** — 입력하면 탭 ●, 등록 후 다시 열어도 남는지, 기존 SQL 잠그면 읽기 전용(표 복사는 됨), 풀면 다시 편집, 블록 삭제
+- [ ] **공통코드관리(㉑)** — 탭 이름, 정의 칸 입력 → ● · 등록 후 다시 열기, 시작일에 20260101 → 2026-01-01, 예전 개요 표가 정의 칸으로 옮겨 보이는지, 공통코드 표 12열(가로 스크롤), 보고서의 '정의' 표
+- [ ] **서비스(㉒)** — 정의 칸 입력 · 등록, 표 제목 세 개, 권한제어 적용여부(기본 미적용, 미적용만 있는 빈 줄은 저장 안 됨), 방향키로 고르는 칸 지나가기, 범위 복사 · 지우기 · 붙여넣기('적용' / 엉뚱한 값)
 - [ ] **지워진 폴더** — 프로젝트 폴더를 지우고 앱 창을 누르면 '폴더가 없습니다' + 목록에서 제거, 메뉴 폴더를 지우면 트리에서 사라지는지
 
 ### 1차 — 확인 완료 (2026-10-27, 문제 없음)

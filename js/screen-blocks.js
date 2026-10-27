@@ -5,7 +5,9 @@
        바뀐 줄을 색칠, 두 편집기 스크롤을 함께 움직임
      - 신규 SQL 변경 이력 (등록하면서 덮어쓴 이전 버전)
 
-   블록 정보: {id, title, file, rb?, asisId?(신규만), log?, sql, rbText}
+   블록 정보: {id, title, file, rb?, asisId?(신규만), info?, params?, log?, sql, rbText}
+     info   = SQL 정의 {화면표시명 등 — SQL_INFO_FIELDS 의 key: 값} (값이 있는 칸만)
+     params = SQL 파라미터 표 [[파라미터명, 순서, 파라미터 유형, 인아웃 유형], …] (빈 줄 제외)
      log  = 이 SQL 에 남긴 이력 [{at, by, text}] (screen-sqltabs.js)
      file = SQL 파일 경로 (asis/sql/<id>.sql, tobe/sql/<id>.sql)
      rb   = 예전 버전의 롤백 SQL 파일 (지금은 새로 만들지 않음. 내용이 있는 블록만 칸을 보여 줌)
@@ -31,7 +33,7 @@ const newBlockId = () => 'b' + Date.now().toString(36) + Math.floor(Math.random(
 function createSqlBlock(kind, order) {
   const id = newBlockId();
   const title = (kind === 'asis' ? '기존 SQL' : '신규 SQL') + (order > 1 ? ' ' + order : '');
-  const block = {id, title, file: `${kind}/sql/${id}.sql`, log: [], sql: '', rbText: ''};
+  const block = {id, title, file: `${kind}/sql/${id}.sql`, info: {}, params: [], log: [], sql: '', rbText: ''};
   // 새로 만든 신규 블록은 짝 없음(신규 쿼리)에서 시작합니다 — 비교할 기존 SQL 은 사용자가 고릅니다
   if (kind === 'tobe') block.asisId = NO_ASIS_PAIR;
   return block;
@@ -71,11 +73,48 @@ function readBlockInputs(kind) {
   }));
 }
 
-/** 블록 순서·제목·연결한 기존 블록을 문자열로 (등록 후 바뀌었는지 비교용) */
+/** 블록 순서·제목·연결한 기존 블록·SQL 정의·파라미터를 문자열로 (등록 후 바뀌었는지 비교용) */
 const blockOrderSignature = kind => JSON.stringify($$(`#blocks-${kind} .blk`).map(element => {
   const block = findSqlBlock(kind, element.dataset.id) || {};
-  return [element.dataset.id, element.querySelector('.bt').value.trim(), block.asisId ?? null];
+  return [element.dataset.id, element.querySelector('.bt').value.trim(), block.asisId ?? null, readSqlDefinition(kind, element)];
 }));
+
+/* ======================= SQL 정의 · 파라미터 ======================= */
+
+/** 파라미터 표 요소 id — 종류 · 블록마다 고유 */
+const sqlParamsTableId = (kind, blockId) => `grid-sql-${kind}-${blockId}`;
+
+/**
+ * 블록의 SQL 정의 · 파라미터를 화면에서 읽기 (앞뒤 공백 제거, 빈 칸 · 빈 줄 제외)
+ * @param {HTMLElement} element 블록 요소(.blk)
+ * @returns {{info: object, params: string[][]}}
+ */
+function readSqlDefinition(kind, element) {
+  const info = readInfoFields(element);
+  const table = document.getElementById(sqlParamsTableId(kind, element.dataset.id));
+  return {info, params: table ? readGridRowsOf(table) : []};
+}
+
+/** 등록할 때 블록 정보에 함께 적을 SQL 정의 · 파라미터 (비어 있으면 적지 않음) */
+const sqlDefinitionOf = ({info, params}) => ({
+  ...(Object.keys(info).length ? {info} : {}),
+  ...(params.length ? {params} : {})
+});
+
+/** 블록 위쪽의 SQL 정의 칸 (SQL_INFO_FIELDS). locked: 잠긴 기존 SQL 이면 고칠 수 없게 (글자 고르기·복사는 됨) */
+const sqlInfoHtml = (block, locked) => infoFieldsHtml(SQL_INFO_FIELDS, block.info, locked);
+
+/** 블록 아래쪽(이력 바로 위)의 SQL 파라미터 표 */
+const sqlParamsHtml = (kind, block, locked) =>
+  `<div class="sqlparams">${gridHtml(sqlParamsTableId(kind, block.id), 'sql.params', block.params, 'SQL 파라미터', locked)}</div>`;
+
+/** 기존 SQL 을 잠그거나 풀 때 SQL 정의 · 파라미터 칸도 함께 (showAsisAsLocked / showAsisAsUnlocked) */
+function setAsisDefinitionReadOnly(readOnly) {
+  $$('#blocks-asis [data-info], #blocks-asis table.grid input').forEach(field => {
+    if (field.tagName === 'SELECT') field.disabled = readOnly;
+    else field.readOnly = readOnly;
+  });
+}
 
 /** 블록이 등록 이후 바뀌었는지 (추가·삭제·제목·SQL). 왼쪽 비교용 편집기(p:)는 제외 */
 function isBlockListChanged(kind) {
@@ -96,7 +135,7 @@ const hasSavedTobeSql = () => Object.entries(app.screen.savedValues)
  */
 const blockTitleHtml = (block, disabled, withCopy) => `<span class="bt-wrap${withCopy ? ' has-copy' : ''}">`
   + `<input type="text" class="bt" value="${escapeHtml(block.title)}" aria-label="SQL 블록 제목" placeholder="제목 입력"${disabled ? ' disabled' : ''}>`
-  + `${withCopy ? hoverCopyButtonHtml('data-copy-title') : ''}</span>`;
+  + `${withCopy ? hoverCopyButtonHtml('data-copy-input') : ''}</span>`;
 
 /** 기존 SQL 블록의 ⋯ 메뉴(삭제) 단추 — 잠그기 전에만 둡니다. 복사는 편집기·제목칸의 복사 아이콘으로 */
 const asisBlockMenuHtml = blockId =>
@@ -104,15 +143,16 @@ const asisBlockMenuHtml = blockId =>
 
 /**
  * SQL 블록 HTML
- *   기존(asis): 제목 + ⋯메뉴(삭제 — 잠그기 전에만) + 편집기 + 이력
- *   신규(tobe): 제목 + 바뀐 줄 수 + [기존 SQL 가져오기] + ⋯메뉴 + [왼쪽: 기존(읽기 전용) | 오른쪽: 신규] + 이력
+ *   기존(asis): 제목 + ⋯메뉴(삭제 — 잠그기 전에만) + SQL 정의 + 편집기 + 파라미터 표 + 이력
+ *   신규(tobe): 제목 + 바뀐 줄 수 + [기존 SQL 가져오기] + ⋯메뉴 + SQL 정의 + [왼쪽: 기존(읽기 전용) | 오른쪽: 신규] + 파라미터 표 + 이력
  */
 function sqlBlockHtml(kind, block, locked) {
   if (kind === 'asis') {
     const action = locked ? '' : asisBlockMenuHtml(block.id);
     return `<div class="blk" data-id="${block.id}">
       <div class="blk-h">${blockTitleHtml(block, locked, false)}<span class="sp"></span>${action}</div>
-      <div class="ed" data-id="${editorId('asis', block.id)}"></div>${itemLogHtml('sql', kind, block)}</div>`;
+      ${sqlInfoHtml(block, locked)}
+      <div class="ed" data-id="${editorId('asis', block.id)}"></div>${sqlParamsHtml(kind, block, locked)}${itemLogHtml('sql', kind, block)}</div>`;
   }
   const rollback = (block.rbText || '').trim()
     ? `<div class="blk-sub">롤백 SQL <span class="muted">이전에 입력한 내용입니다. 비우고 등록하면 이 칸은 사라집니다.</span></div><div class="ed" data-id="${editorId('rollback', block.id)}"></div>`
@@ -123,12 +163,14 @@ function sqlBlockHtml(kind, block, locked) {
       <label class="pair-pick">기존<select class="pair-sel" data-pair-sel="${block.id}" aria-label="비교할 기존 SQL 블록"></select></label>
       <button type="button" class="btn btn-s" data-from="${block.id}">기존 SQL 가져오기</button>
       <button type="button" class="icon" data-menu="tobe" data-bid="${block.id}" aria-label="블록 메뉴 (기존과 비교, 삭제)">⋯</button></div>
+    ${sqlInfoHtml(block, false)}
     <div class="blk-b">
       <div class="pane pane-l"><div class="pane-h">${ICON.lock}기존 · 읽기 전용<span class="pair-t" data-pair-t="${block.id}"></span></div>
         <div class="ed" data-id="${editorId('pair', block.id)}"></div><div class="pair-none" data-pair-none="${block.id}" hidden>고른 기존 SQL 블록이 없어졌습니다. 블록 머리에서 다시 골라 주세요.</div></div>
       <div class="pane pane-r"><div class="pane-h acc">신규 (편집)</div><div class="ed" data-id="${editorId('tobe', block.id)}"></div></div>
     </div>
     ${rollback}
+    ${sqlParamsHtml(kind, block, false)}
     ${itemLogHtml('sql', kind, block)}
   </div>`;
 }
@@ -225,11 +267,12 @@ async function deleteSqlBlock(kind, blockId) {
   const savedAsisBlocks = (screen.meta.sqlBlocks && screen.meta.sqlBlocks.asis) || [];
   const wasRegistered = kind === 'asis' && savedAsisBlocks.some(saved => saved.id === blockId);
   const title = element.querySelector('.bt').value.trim() || block.title;
-  const desc = `‘${title}’ SQL을 삭제할까요? 이 SQL의 이력도 함께 지워집니다.`
+  const desc = `‘${title}’ SQL을 삭제할까요? 이 SQL의 정의·파라미터·이력도 함께 지워집니다.`
     + (kind === 'tobe' || wasRegistered ? '\n등록하면 저장된 파일도 함께 삭제됩니다.' : '');
   if (!(await askConfirm({title: 'SQL 삭제', desc, okText: '삭제', danger: true}))) return;
 
   clearLineMarks(blockId);
+  clearGridPasteUndo(sqlParamsTableId(kind, blockId));
   Object.keys(EDITOR_PREFIX).forEach(prefixKind => destroyEditor(editorId(prefixKind, blockId)));
   element.remove();
   if (kind === 'tobe') screen.removedTobeBlocks.push(block);
@@ -255,11 +298,11 @@ async function copyEditorText(id) {
   toast('복사했습니다.');
 }
 
-/** SQL 블록 제목 복사 (복사 아이콘 옆의 제목 입력칸 값) */
-async function copyBlockTitle(button) {
-  const input = button.closest('.bt-wrap').querySelector('.bt');
+/** 입력칸 복사 — 복사 아이콘과 같은 칸에 있는 입력칸 값 (SQL 블록 제목 · SQL 정의 칸) */
+async function copyInputText(button) {
+  const input = button.parentElement.querySelector('input, textarea');
   const text = input.value.trim();
-  if (!text) return toast('복사할 제목이 없습니다.');
+  if (!text) return toast('복사할 내용이 없습니다.');
   try {
     await navigator.clipboard.writeText(text);
   } catch {

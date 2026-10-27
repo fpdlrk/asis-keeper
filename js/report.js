@@ -160,17 +160,19 @@ function screenReportHtml(data, index) {
 }
 
 /**
- * 정의서 영역 (서비스 · 오브젝트 · 코드분류): 항목마다 이름 + 내용이 있는 표. 표가 모두 비었으면 ''
+ * 정의서 영역 (서비스 · 오브젝트 · 공통코드관리): 항목마다 이름 + 정의 칸(값이 있는 것) + 내용이 있는 표. 모두 비었으면 ''
  * 항목 이력은 내부 작업 기록이라 고객 전달용 보고서에는 넣지 않습니다.
  */
 function definitionSectionHtml(section, tab, items) {
-  const {label, grids} = DEF_TABS[tab];
-  const hasRows = item => grids.some(([key]) => (item.grids[key] || []).length);
-  const filledItems = (items || []).filter(hasRows);
+  const {label, grids, info: infoFields = []} = DEF_TABS[tab];
+  const infoRows = item => infoFields.filter(({key}) => (item.info || {})[key]).map(field => [field.label, item.info[field.key]]);
+  const hasContent = item => infoRows(item).length || grids.some(([key]) => (item.grids[key] || []).length);
+  const filledItems = (items || []).filter(hasContent);
   if (!filledItems.length) return '';
   let html = section(label + ' 정의');
   for (const item of filledItems) {
     html += `<h4>${escapeHtml(item.title || UNNAMED_DEF_TITLE)}</h4>`;
+    if (infoRows(item).length) html += `<div class="cap">정의</div>` + reportTableHtml(['항목', '값'], infoRows(item));
     for (const [key, gridLabel] of grids) {
       const rows = item.grids[key] || [];
       if (!rows.length) continue;

@@ -1,6 +1,6 @@
 /* ==========================================================================
    screen-sqltabs.js — 알약 탭 · SQL 탭 · 항목 이력
-     - 알약 탭(공통): 기존 SQL · 신규 SQL · 서비스 · 오브젝트 · 코드분류 탭 안에서 항목 하나 = 탭 하나
+     - 알약 탭(공통): 기존 SQL · 신규 SQL · 서비스 · 오브젝트 · 공통코드관리 탭 안에서 항목 하나 = 탭 하나
          탭 줄 id = 'asis' | 'tobe' (SQL, 이 파일) | 'service' | 'object' | 'code' (정의서, screen-defs.js)
          탭이 넘치면: 스크롤바는 숨기고(UI 가 틀어지지 않게) 양 끝에 ‹ › 단추 + 가려진 쪽을 흐리게 표시.
          마우스 휠(가로로 움직임) · 탭 줄을 끌기 · [▾ 전체] 목록으로도 이동합니다.
@@ -54,7 +54,7 @@ function renderPillTabs(barId, entries, {activeId, removable, addLabel, emptyTex
   watchPillTabsSize(list);
   $('#tabsTools-' + barId).innerHTML =
     `<button type="button" class="btn btn-s btn-ghost" data-pill-all="${barId}" data-menu="pilltabs" aria-haspopup="menu"${entries.length ? '' : ' disabled'}>▾ 전체 ${entries.length}</button>`
-    + (addLabel ? `<button type="button" class="btn btn-s" data-pill-add="${barId}">${escapeHtml(addLabel)}</button>` : '');
+    + (addLabel ? `<button type="button" class="btn btn-s btn-pill-add" data-pill-add="${barId}">${escapeHtml(addLabel)}</button>` : '');
   const empty = $('#tabsEmpty-' + barId);
   empty.hidden = entries.length > 0;
   empty.textContent = emptyText;
@@ -240,7 +240,7 @@ function activateSqlTab(kind, blockId) {
 
 /**
  * SQL 하나가 등록 이후 바뀌었는지 (탭의 ● 표시)
- * @param {Array} savedRows 마지막 등록 때의 [id, 제목, asisId] 목록 (savedBlockOrder 를 풀어 놓은 것)
+ * @param {Array} savedRows 마지막 등록 때의 [id, 제목, asisId, SQL 정의·파라미터] 목록 (savedBlockOrder 를 풀어 놓은 것)
  */
 function isSqlBlockChanged(kind, blockId, savedRows) {
   const screen = app.screen;
@@ -251,6 +251,7 @@ function isSqlBlockChanged(kind, blockId, savedRows) {
   const block = findSqlBlock(kind, blockId) || {};
   if (element.querySelector('.bt').value.trim() !== saved[1]) return true;
   if ((block.asisId ?? null) !== saved[2]) return true;
+  if (JSON.stringify(readSqlDefinition(kind, element)) !== JSON.stringify(saved[3])) return true;
   return [editorId(kind, blockId), editorId('rollback', blockId)].some(isEditorChanged);
 }
 

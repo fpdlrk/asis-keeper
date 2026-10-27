@@ -1,14 +1,15 @@
 /* ==========================================================================
-   screen-defs.js — 정의서 탭 (서비스 · 오브젝트 · 코드분류)
+   screen-defs.js — 정의서 탭 (서비스 · 오브젝트 · 공통코드관리)
      - SQL 탭과 같은 모양: 항목(예: 서비스 하나) = 알약 탭 하나 (탭 줄은 screen-sqltabs.js 의 공통 함수)
        [+ 추가] 창(이름 필수 · 이력 선택), 탭 × 로 삭제, [▾ 전체], 등록하지 않은 변경이 있으면 ●
-     - 항목 본문: 이름 + 표 여러 개(DEF_TABS[탭].grids, 열은 GRID_COLUMNS) + 이력(screen-sqltabs.js itemLogHtml)
+     - 항목 본문: 이름 + 정의 칸(DEF_TABS[탭].info 가 있는 탭만 — 공통코드관리) + 표 여러 개(DEF_TABS[탭].grids, 열은 GRID_COLUMNS)
+       + 이력(screen-sqltabs.js itemLogHtml)
        표는 SQL 처럼 여러 칸·여러 줄 붙여넣기, Ctrl+Z / Ctrl+Y 가 됩니다(screen-save.js).
      - 등록: 저장 바 [등록] → <탭>/items.json (saveDefItems)
      - 읽기와 예전 파일(글 입력란·개요 표) 옮기기: screen-data.js loadDefItems
 
-   항목 정보: app.screen.defItems[탭] = [{id, title, grids, log}]
-     표의 지금 값은 화면에서 읽습니다(readDefInputs). grids 는 처음 그릴 때의 값입니다.
+   항목 정보: app.screen.defItems[탭] = [{id, title, info, grids, log}]
+     정의 칸 · 표의 지금 값은 화면에서 읽습니다(readDefInputs). info · grids 는 처음 그릴 때의 값입니다.
    ========================================================================== */
 
 /* 이름이 비었을 때 탭에 보일 이름 */
@@ -19,13 +20,14 @@ const UNNAMED_DEF_TITLE = '(이름 없음)';
 /** 표 요소 id — 정의서 탭 · 항목 · 표마다 고유 */
 const defGridTableId = (tab, itemId, gridKey) => `grid-${tab}-${itemId}-${gridKey}`;
 
-/** 항목 하나의 본문: 이름 + 표들 + 이력 */
+/** 항목 하나의 본문: 이름 + 정의 칸(있는 탭만) + 표들 + 이력 */
 function defItemHtml(tab, item) {
-  const grids = DEF_TABS[tab].grids.map(([key, label]) => `<div class="fld"><span class="fld-l">${label}</span>`
-    + gridHtml(defGridTableId(tab, item.id, key), `${tab}.${key}`, item.grids[key]) + `</div>`).join('');
+  const infoFields = DEF_TABS[tab].info;
+  const grids = DEF_TABS[tab].grids.map(([key, label]) => gridHtml(defGridTableId(tab, item.id, key), `${tab}.${key}`, item.grids[key], label)).join('');
   return `<div class="blk" data-id="${item.id}">
     <div class="blk-h"><span class="bt-wrap"><input type="text" class="bt def-title" value="${escapeHtml(item.title)}"
       aria-label="${DEF_TABS[tab].label} 이름" placeholder="이름 입력"></span></div>
+    ${infoFields ? infoFieldsHtml(infoFields, item.info) : ''}
     <div class="def-grids">${grids}</div>
     ${itemLogHtml('def', tab, item)}
   </div>`;
@@ -38,20 +40,20 @@ const defPanelHtml = tab => `<div class="panel" data-t="${tab}">${pillTabsBarHtm
 /* ======================= 값 · 변경 감지 ======================= */
 
 /**
- * 화면의 항목을 순서대로 읽기 (이름 · 표의 지금 값, 빈 줄 제외)
- * @returns {{id: string, title: string, grids: object}[]}
+ * 화면의 항목을 순서대로 읽기 (이름 · 정의 칸 · 표의 지금 값, 빈 칸 · 빈 줄 제외)
+ * @returns {{id: string, title: string, info: object, grids: object}[]}
  */
 function readDefInputs(tab) {
   return $$(`#defs-${tab} > .blk`).map(element => {
     const itemId = element.dataset.id;
     const grids = Object.fromEntries(DEF_TABS[tab].grids.map(([key]) =>
       [key, readGridRowsOf(document.getElementById(defGridTableId(tab, itemId, key)))]));
-    return {id: itemId, title: element.querySelector('.def-title').value.trim(), grids};
+    return {id: itemId, title: element.querySelector('.def-title').value.trim(), info: readInfoFields(element), grids};
   });
 }
 
 /**
- * 변경 비교용 문자열 (이력은 빼고 id · 이름 · 표)
+ * 변경 비교용 문자열 (이력은 빼고 id · 이름 · 정의 칸 · 표)
  * 칸 수를 열 수에 맞추고 앞뒤 공백·빈 줄을 정리해 비교합니다 — 예전 파일에서 옮긴 값처럼 칸 수가 다른 줄도 같은 값이면 같다고 보기 위해서
  */
 function defSignature(tab, item) {
@@ -61,10 +63,11 @@ function defSignature(tab, item) {
       .map(cells => Array.from({length: columnCount}, (_, i) => String(cells[i] ?? '').trim()))
       .filter(cells => cells.some(Boolean));
   });
-  return JSON.stringify([item.id, item.title, grids]);
+  const info = (DEF_TABS[tab].info || []).map(({key}) => String((item.info || {})[key] ?? '').trim());
+  return JSON.stringify([item.id, item.title, info, grids]);
 }
 
-/** 정의서 탭에 등록하지 않은 변경이 있는지 (항목 추가·삭제·순서 · 이름 · 표) */
+/** 정의서 탭에 등록하지 않은 변경이 있는지 (항목 추가·삭제·순서 · 이름 · 정의 칸 · 표) */
 function isDefTabChanged(tab) {
   if (!$('#defs-' + tab)) return false;
   const current = readDefInputs(tab).map(item => defSignature(tab, item));
@@ -172,13 +175,14 @@ async function addDefItem(tab) {
   if (!answer) return;
   const screen = app.screen;
   const log = answer.logText ? [{at: new Date().toISOString(), by: currentWorkerName(), text: answer.logText}] : [];
-  const item = {id: newBlockId(), title: answer.title, grids: emptyDefGrids(tab), log};
+  const item = {id: newBlockId(), title: answer.title, info: {}, grids: emptyDefGrids(tab), log};
   screen.defItems[tab].push(item);
   $('#defs-' + tab).insertAdjacentHTML('beforeend', defItemHtml(tab, item));
   renderDefTabs(tab);
   activateDefTab(tab, item.id);
   refreshIndicators();
-  const firstCell = $(`#${defGridTableId(tab, item.id, DEF_TABS[tab].grids[0][0])} input`);
+  // 정의 칸이 있으면 첫 정의 칸, 없으면 첫 표의 첫 칸으로
+  const firstCell = $(`#defs-${tab} > .blk[data-id="${item.id}"] [data-info]`) || $(`#${defGridTableId(tab, item.id, DEF_TABS[tab].grids[0][0])} input`);
   if (firstCell) firstCell.focus();
 }
 
@@ -207,14 +211,15 @@ async function deleteDefItem(tab, itemId) {
 /* ======================= 등록 ======================= */
 
 /**
- * 정의서 탭 등록: 화면의 항목(이름 · 표) + 이력을 <탭>/items.json 에 저장 (saveSection 에서 부름)
+ * 정의서 탭 등록: 화면의 항목(이름 · 정의 칸 · 표) + 이력을 <탭>/items.json 에 저장 (saveSection 에서 부름)
  * 항목을 모두 지웠어도 빈 목록을 저장합니다 — 그래야 예전 파일을 다시 옮겨 오지 않습니다.
  */
 async function saveDefItems(tab) {
   const screen = app.screen;
   const items = readDefInputs(tab).map(input => {
     const item = screen.defItems[tab].find(other => other.id === input.id) || {};
-    return {id: input.id, title: input.title, grids: input.grids, ...blockLogOf(item)};
+    const info = Object.keys(input.info).length ? {info: input.info} : {};
+    return {id: input.id, title: input.title, ...info, grids: input.grids, ...blockLogOf(item)};
   });
   await writeJson(screen.dir, DEF_TABS[tab].file, items);
   screen.savedDefItems[tab] = JSON.parse(JSON.stringify(items));

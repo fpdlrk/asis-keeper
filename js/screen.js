@@ -5,11 +5,11 @@
      screen.js        : 화면 상태, 열기/그리기, 편집기 만들기, 탭, 변경 감지(저장 바 표시)
      screen-blocks.js : SQL 블록 (그리기·삭제, 기존과 나란히 보기, 바뀐 줄 표시, 변경 이력)
      screen-sqltabs.js: 알약 탭(공통) · SQL 탭 ([+ SQL 추가] 창) · 항목 이력(공통)
-     screen-defs.js   : 정의서 탭 (서비스 · 오브젝트 · 코드분류 — 항목마다 탭 · 표 · 이력)
+     screen-defs.js   : 정의서 탭 (서비스 · 오브젝트 · 공통코드관리 — 항목마다 탭 · 표 · 이력)
      screen-files.js  : 파일 목록 (끌어다 놓기, 저장 경로, 신규/수정/동일 표시)
      screen-save.js   : 등록 · 잠그기 · 상태 변경 · 원본 무결성 확인, 화면 이벤트 연결
 
-   탭: 기존 SQL · 신규 SQL · 비교 · 서비스 · 오브젝트 · 코드분류 · 첨부
+   탭: 기존 SQL · 신규 SQL · 비교 · 서비스 · 오브젝트 · 공통코드관리 · 첨부
    오른쪽 영역: 상태 이력(위 50%) · 메모(아래 50%)
    등록은 하단 저장 바 하나로 모음. 단, 기존(ASIS)은 되돌릴 수 없어 "등록 후 잠그기"로 따로 등록.
    ========================================================================== */
@@ -17,12 +17,12 @@
 /* ---- 탭 · 등록 영역 ---- */
 const SCREEN_TABS = [
   ['asis', '기존 SQL'], ['tobe', '신규 SQL'], ['cmp', '비교'],
-  ['service', '서비스'], ['object', '오브젝트'], ['code', '코드분류'], ['attach', '첨부']
+  ['service', '서비스'], ['object', '오브젝트'], ['code', '공통코드관리'], ['attach', '첨부']
 ];
 /* 저장 바의 [등록] 이 다루는 영역과 이름 (등록 순서대로). 'common' = 티켓·작업자·원본 위치·메모 */
 const SAVE_SECTIONS = [
   ['common', '작업 정보'], ['tobe', '신규 SQL'], ['service', '서비스'],
-  ['object', '오브젝트'], ['code', '코드분류'], ['attach', '첨부']
+  ['object', '오브젝트'], ['code', '공통코드관리'], ['attach', '첨부']
 ];
 
 /* ---- 편집기 ----
@@ -81,10 +81,22 @@ const isEditorChanged = id => {
   return !!editor && editor.getValue() !== app.screen.savedValues[id];
 };
 
-/** 표의 지금 값 (빈 줄 제외) */
-const readGridRowsOf = table => [...table.tBodies[0].rows]
-  .map(row => [...row.querySelectorAll('input')].map(input => input.value.trim()))
-  .filter(cells => cells.some(Boolean));
+/* 표의 칸 요소 (글 입력칸 · 고르는 칸) */
+const GRID_CELL_SELECTOR = 'input, select';
+
+/** 열의 기본값 — 고르는 칸은 첫 값, 글 칸은 '' */
+const gridCellDefault = (columnsKey, col) => ((GRID_COLUMNS[columnsKey].options || {})[col] || [''])[0];
+
+/**
+ * 표의 지금 값 (빈 줄 제외)
+ * 모든 칸이 기본값인 줄은 빈 줄로 봅니다 — 고르는 칸(기본 '미적용')만 있는 새 줄이 저장되지 않게
+ */
+function readGridRowsOf(table) {
+  const columnsKey = table.dataset.cols;
+  return [...table.tBodies[0].rows]
+    .map(row => [...row.querySelectorAll(GRID_CELL_SELECTOR)].map(cell => cell.value.trim()))
+    .filter(cells => cells.some((value, col) => value !== gridCellDefault(columnsKey, col)));
+}
 
 /** 영역에 등록된 내용이 있는지 (탭의 ✓ 표시) */
 function isRegistered(section) {
@@ -219,7 +231,7 @@ async function openScreen(path, reload) {
 /**
  * 마우스를 올리면 나타나는 복사 아이콘 버튼 (SQL 편집기 · SQL 블록 제목칸)
  * 글 입력란의 [복사] 버튼(data-copy)과 속성 이름을 나눠, 어느 단추인지 코드에서 헷갈리지 않게 함
- * @param {string} dataAttr 'data-copy-ed="편집기 id"' 또는 'data-copy-title'
+ * @param {string} dataAttr 'data-copy-ed="편집기 id"' 또는 'data-copy-input'(같은 칸의 입력칸 복사)
  */
 const hoverCopyButtonHtml = dataAttr =>
   `<button type="button" class="copy-hover" ${dataAttr} title="복사" aria-label="복사">${MENU_ICON.copy}</button>`;
@@ -228,26 +240,79 @@ const hoverCopyButtonHtml = dataAttr =>
  * 표의 한 줄
  * @param {string} columnsKey GRID_COLUMNS 의 키 (예: 'service.attrs')
  */
-function gridRowHtml(columnsKey, cells) {
-  const {cols, types} = GRID_COLUMNS[columnsKey];
+function gridRowHtml(columnsKey, cells, readOnly = false) {
+  const {cols, types, options = {}} = GRID_COLUMNS[columnsKey];
   // 날짜 칸도 글 입력칸으로 둡니다 — 20260101 처럼 숫자만 쳐도 칸을 떠날 때 2026-01-01 로 맞춤(screen-grid.js),
   // 브라우저 날짜 입력칸은 방향키·범위 선택·복사와 함께 쓰기 어렵기 때문
   const typeAttrs = type => (type === 'date' ? ' data-type="date" inputmode="numeric" placeholder="예: 20260101"' : '');
-  const inputs = cols.map((col, i) => `<td><input type="text" aria-label="${col}"${typeAttrs(types[i])} value="${escapeHtml(cells[i] || '')}"></td>`).join('');
+  const cellHtml = (col, i) => {
+    if (types[i] === 'select') {
+      // 목록에 없는 값(예전 데이터 등)은 기본값(첫 값)으로 보임
+      const value = options[i].includes(cells[i]) ? cells[i] : options[i][0];
+      return `<select aria-label="${col}"${readOnly ? ' disabled' : ''}>`
+        + options[i].map(option => `<option${option === value ? ' selected' : ''}>${escapeHtml(option)}</option>`).join('') + '</select>';
+    }
+    return `<input type="text" aria-label="${col}"${typeAttrs(types[i])}${readOnly ? ' readonly' : ''} value="${escapeHtml(cells[i] || '')}">`;
+  };
+  const inputs = cols.map((col, i) => `<td>${cellHtml(col, i)}</td>`).join('');
   return `<tr>${inputs}<td><button type="button" class="icon" data-del aria-label="행 삭제">✕</button></td></tr>`;
 }
 
+/* ======================= 정의 칸 (SQL 정의 · 공통코드 정의) ======================= */
+
 /**
- * 표 전체 + [+ 행 추가] (행이 없으면 빈 줄 하나)
+ * 정의 칸 묶음 HTML — 칸마다 이름 + 입력칸(오른쪽 끝에 복사 아이콘)
+ * 복사 아이콘과 '내용 있음' 배경은 CSS :placeholder-shown 으로 정하므로, 입력칸에는 늘 placeholder 를 둡니다(보이지 않는 " ").
+ * @param {object[]} fields 칸 목록 (SQL_INFO_FIELDS, DEF_TABS[탭].info)
+ * @param {object} [info] 저장된 값 {key: 값}
+ * @param {boolean} [locked] 고칠 수 없게 (글자 고르기·복사는 됨)
+ */
+function infoFieldsHtml(fields, info = {}, locked = false) {
+  const html = fields.map(({key, label, options, multiline, wide, type}) => {
+    const value = (info || {})[key] || '';
+    const attrs = `data-info="${key}" aria-label="${label}"`;
+    let control;
+    if (options) {
+      control = `<select ${attrs}${locked ? ' disabled' : ''}>`
+        + options.map(option => `<option value="${escapeHtml(option)}"${option === value ? ' selected' : ''}>${option ? escapeHtml(option) : '선택'}</option>`).join('')
+        + '</select>';
+    } else {
+      const readOnly = locked ? ' readonly' : '';
+      const typeAttrs = type === 'date' ? ' data-type="date" inputmode="numeric" placeholder="예: 20260101"' : ' placeholder=" "';
+      const field = multiline
+        ? `<textarea ${attrs} rows="2" placeholder=" "${readOnly}>${escapeHtml(value)}</textarea>`
+        : `<input type="text" ${attrs}${typeAttrs} value="${escapeHtml(value)}"${readOnly}>`;
+      control = `<span class="copy-wrap">${field}${hoverCopyButtonHtml('data-copy-input')}</span>`;
+    }
+    return `<label class="infobox-f${wide ? ' wide' : ''}"><span>${label}</span>${control}</label>`;
+  }).join('');
+  return `<div class="infobox"><div class="infobox-g">${html}</div></div>`;
+}
+
+/** 정의 칸 값 읽기 — container 안의 [data-info] 칸 (앞뒤 공백 제거, 빈 칸 제외, 칸 순서대로) */
+function readInfoFields(container) {
+  const info = {};
+  container.querySelectorAll('[data-info]').forEach(field => {
+    const value = field.value.trim();
+    if (value) info[field.dataset.info] = value;
+  });
+  return info;
+}
+
+/**
+ * 표 하나: 제목 줄(제목 + 오른쪽 끝 [+ 행 추가]) + 표 (행이 없으면 빈 줄 하나)
  * 같은 종류의 표가 화면에 여러 개 있을 수 있어(정의서 항목마다), 표마다 고유 id 를 주고 열 구성은 data-cols 로 찾습니다.
  * @param {string} tableId    표 요소 id (화면 안에서 고유)
  * @param {string} columnsKey GRID_COLUMNS 의 키
+ * @param {string} title      표 제목 (예: '속성정의')
+ * @param {boolean} [readOnly] 잠긴 기존 SQL 의 표처럼 고칠 수 없는 표 (고르기·복사는 됨. 행 추가·삭제 단추는 CSS 로 숨김)
  */
-function gridHtml(tableId, columnsKey, rows) {
+function gridHtml(tableId, columnsKey, rows, title, readOnly = false) {
   const header = GRID_COLUMNS[columnsKey].cols.map(col => `<th>${col}</th>`).join('');
-  const body = (rows && rows.length ? rows : [[]]).map(cells => gridRowHtml(columnsKey, cells)).join('');
-  return `<div class="gridwrap"><table class="grid" id="${tableId}" data-cols="${columnsKey}"><thead><tr>${header}<th></th></tr></thead><tbody>${body}</tbody></table></div>`
-    + `<button type="button" class="btn-add sm" data-add="${tableId}">+ 행 추가</button>`;
+  const body = (rows && rows.length ? rows : [[]]).map(cells => gridRowHtml(columnsKey, cells, readOnly)).join('');
+  return `<div class="fld"><div class="fld-h"><span class="fld-l grid-title">${escapeHtml(title)}</span>`
+    + `<button type="button" class="btn btn-s" data-add="${tableId}">+ 행 추가</button></div>`
+    + `<div class="gridwrap"><table class="grid" id="${tableId}" data-cols="${columnsKey}"><thead><tr>${header}<th></th></tr></thead><tbody>${body}</tbody></table></div></div>`;
 }
 
 /** 상태 이력 목록 — 한 줄 형식: [요청] 2026.10.20 · 홍길동 (바꾼 사람 기록이 없으면 이 화면의 작업자, 그것도 없으면 -) */

@@ -102,7 +102,7 @@ async function findChangedFiles(dir, hashes, {stopAtFirst = false} = {}) {
   return changed;
 }
 
-/* ======================= 정의서 항목 (서비스 · 오브젝트 · 코드분류) ======================= */
+/* ======================= 정의서 항목 (서비스 · 오브젝트 · 공통코드관리) ======================= */
 
 /**
  * 예전 글을 표의 줄로 바꾸기 — 칸이 표보다 많으면 남는 값은 마지막 칸에 이어 붙임(버리지 않음)
@@ -115,6 +115,18 @@ function textToGridRows(text, columnCount) {
     .map(cells => (cells.length <= columnCount
       ? cells
       : [...cells.slice(0, columnCount - 1), cells.slice(columnCount - 1).filter(Boolean).join(' ')]));
+}
+
+/**
+ * 예전 '개요' 표의 첫 줄을 정의 칸 값으로 (LEGACY_OVERVIEW_INFO 가 있는 탭만 — 공통코드관리)
+ * 개요 표가 정의 칸으로 바뀌었기 때문입니다. 둘째 줄부터는 옮기지 않습니다(개요는 한 줄로 쓰던 표).
+ * @returns {object} {칸 key: 값} (빈 칸 제외)
+ */
+function overviewRowToInfo(tab, overviewRows) {
+  const keys = LEGACY_OVERVIEW_INFO[tab];
+  const row = keys && (overviewRows || [])[0];
+  if (!row) return {};
+  return Object.fromEntries(keys.map((key, i) => [key, String(row[i] ?? '').trim()]).filter(([, value]) => value));
 }
 
 /** 빈 표 묶음 {표 키: []} */
@@ -134,15 +146,18 @@ async function readLegacyDefItem(dir, tab) {
   for (const [key, file] of Object.entries(legacy.texts)) {
     grids[key] = textToGridRows(await readText(dir, file) || '', GRID_COLUMNS[`${tab}.${key}`].cols.length);
   }
-  if (!Object.values(grids).some(rows => rows.length)) return null;
-  return {id: LEGACY_DEF_ITEM.id, title: LEGACY_DEF_ITEM.title, grids, log: []};
+  // 개요 표가 정의 칸으로 바뀐 탭은 개요를 정의 칸으로 옮김
+  const info = overviewRowToInfo(tab, grids.overview);
+  if (!DEF_TABS[tab].grids.some(([key]) => key === 'overview')) delete grids.overview;
+  if (!Object.values(grids).some(rows => rows.length) && !Object.keys(info).length) return null;
+  return {id: LEGACY_DEF_ITEM.id, title: LEGACY_DEF_ITEM.title, info, grids, log: []};
 }
 
 /**
  * 정의서 탭의 항목 목록 읽기 (화면·보고서가 함께 씀)
  *   <탭>/items.json 이 있으면 그것을, 없으면 예전 파일을 '기본' 항목으로 옮겨 보여 줌
  *   (예전 내용도 이미 등록했던 내용이므로 등록된 것으로 봄. 다음 [등록] 때 items.json 으로 저장됨)
- * @returns {Promise<{id, title, grids, log}[]>}
+ * @returns {Promise<{id, title, info, grids, log}[]>}
  */
 async function loadDefItems(dir, tab) {
   const saved = await readJson(dir, DEF_TABS[tab].file, null);
@@ -153,6 +168,7 @@ async function loadDefItems(dir, tab) {
   return saved.map(item => ({
     id: item.id,
     title: item.title || '',
+    info: item.info || overviewRowToInfo(tab, item.grids && item.grids.overview),   // 정의 칸이 생기기 전 항목은 개요 표에서
     grids: {...emptyDefGrids(tab), ...(item.grids || {})},
     log: item.log || []
   }));

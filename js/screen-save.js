@@ -66,7 +66,8 @@ async function registerAsis() {
         const block = findSqlBlock('asis', input.id);
         await writeFile(screen.dir, block.file, new Blob([input.sql], {type: 'text/plain'}));
         block.title = input.title;
-        blockList.push({id: block.id, title: block.title, file: block.file, ...blockLogOf(block)});
+        Object.assign(block, readSqlDefinition('asis', input.element));
+        blockList.push({id: block.id, title: block.title, file: block.file, ...sqlDefinitionOf(block), ...blockLogOf(block)});
         screen.savedValues[editorId('asis', block.id)] = input.sql;
       }
       // 2) 잠금을 푼 뒤 삭제한 블록의 파일 지우기
@@ -161,6 +162,7 @@ function setAsisEditorsReadOnly(readOnly) {
 function showAsisAsLocked() {
   const screen = app.screen;
   setAsisEditorsReadOnly(true);
+  setAsisDefinitionReadOnly(true);
   $$('#blocks-asis .bt').forEach(input => { input.disabled = true; });
   // ⋯ 메뉴(삭제)는 잠그면 쓸 수 없으므로 지움 (복사는 편집기·제목칸의 복사 아이콘으로)
   $$('#blocks-asis [data-menu="asis"]').forEach(button => button.remove());
@@ -178,6 +180,7 @@ function showAsisAsLocked() {
 function showAsisAsUnlocked() {
   const screen = app.screen;
   setAsisEditorsReadOnly(false);
+  setAsisDefinitionReadOnly(false);
   $$('#blocks-asis .bt').forEach(input => { input.disabled = false; });
   // ⋯ 메뉴(삭제)를 블록 머리 끝에 다시 붙임
   $$('#blocks-asis .blk').forEach(element => {
@@ -239,7 +242,8 @@ async function saveTobeBlocks() {
       screen.savedValues[id] = value;
     }
     block.title = input.title;
-    blockList.push({id: block.id, title: block.title, file: block.file, rb: block.rb, asisId: block.asisId, ...blockLogOf(block)});
+    Object.assign(block, readSqlDefinition('tobe', input.element));
+    blockList.push({id: block.id, title: block.title, file: block.file, rb: block.rb, asisId: block.asisId, ...sqlDefinitionOf(block), ...blockLogOf(block)});
   }
   for (const block of screen.removedTobeBlocks) {
     await removeFileQuietly(screen.dir, block.file);
@@ -267,7 +271,7 @@ async function saveSection(section) {
     await saveTextField('memo');
     await saveMeta();
   } else {
-    await saveDefItems(section);   // 서비스 · 오브젝트 · 코드분류 (screen-defs.js)
+    await saveDefItems(section);   // 서비스 · 오브젝트 · 공통코드관리 (screen-defs.js)
   }
 }
 
@@ -374,7 +378,7 @@ function handleScreenClick(e) {
   else if (data.add) addGridRow(data.add);                       // 표 [+ 행 추가]
   else if (data.del !== undefined) deleteGridRow(button);        // 표 줄 ✕
   else if (data.copyEd) copyEditorText(data.copyEd);             // 편집기 오른쪽 위 복사 아이콘
-  else if (data.copyTitle !== undefined) copyBlockTitle(button); // SQL 블록 제목칸 복사 아이콘
+  else if (data.copyInput !== undefined) copyInputText(button);   // 입력칸 오른쪽 끝 복사 아이콘 (SQL 제목 · SQL 정의)
   else if (data.miniTab) showTab(data.miniTab);                     // 요약 줄의 화면 탭
   else if (data.miniTop !== undefined) scrollScreenToTop();         // 요약 줄의 SQL/항목 이름 → 맨 위로
   else if (data.pillScroll) scrollPillTabs(data.pillScroll, Number(data.dir));   // 알약 탭 줄 ‹ ›

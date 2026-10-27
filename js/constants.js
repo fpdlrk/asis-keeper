@@ -40,30 +40,66 @@ const TEXT_FIELD_FILES = {
   memo: 'memo.md'
 };
 
-/* ---- 정의서 탭 (서비스 · 오브젝트 · 코드분류) — screen-defs.js ----
-   탭 안에서 항목(예: 서비스 하나)마다 알약 탭을 만들고, 항목 본문에 표 여러 개 + 이력을 둡니다.
-   저장: <file> = [{id, title, grids: {표 키: [[칸, …], …]}, log?: [{at, by, text}]}]
-   grids: [표 키, 화면에 보일 이름] — 표의 열은 GRID_COLUMNS['<탭>.<표 키>'] */
+/* ---- 정의서 탭 (서비스 · 오브젝트 · 공통코드관리) — screen-defs.js ----
+   탭 안에서 항목(예: 서비스 하나)마다 알약 탭을 만들고, 항목 본문에 [정의 칸] + 표 여러 개 + 이력을 둡니다.
+   저장: <file> = [{id, title, info?: {칸 key: 값}, grids: {표 키: [[칸, …], …]}, log?: [{at, by, text}]}]
+   info : 정의 칸 목록(SQL_INFO_FIELDS 와 같은 형식) — 있는 탭만
+   grids: [표 키, 화면에 보일 이름] — 표의 열은 GRID_COLUMNS['<탭>.<표 키>']
+   ※ 공통코드관리 탭의 키는 예전 이름 그대로 'code' (저장 폴더 code/ 와 맞춤) */
 const DEF_TABS = {
-  service: {label: '서비스', file: 'service/items.json', grids: [['overview', '개요'], ['attrs', '속성정의'], ['funcs', '기능정의']]},
+  // 서비스 표의 키는 예전 이름 그대로 (overview = 메세지정의, attrs = 기능정의, funcs = 권한제어) — 저장된 데이터와 맞추기 위함. preprocess = 전처리
+  service: {label: '서비스', file: 'service/items.json', info: [
+    {key: 'transactionName', label: '트랜잭션명'},
+    {key: 'commandClass', label: '커멘드클래스명'},
+    {key: 'twoPcYn', label: '2PC지원여부'},
+    {key: 'logYn', label: '로그사용여부'},
+    {key: 'remark', label: '비고', wide: true}
+  ], grids: [['overview', '메세지정의'], ['attrs', '기능정의'], ['funcs', '권한제어(사용자 그룹)'], ['preprocess', '전처리']]},
   object: {label: '오브젝트', file: 'object/items.json', grids: [['overview', '개요'], ['attrs', '속성'], ['children', '하위 오브젝트']]},
-  code: {label: '코드분류', file: 'code/items.json', grids: [['overview', '개요'], ['common', '공통코드내역관리'], ['system', '시스템코드관리']]}
+  code: {label: '공통코드관리', file: 'code/items.json', info: [
+    {key: 'codeGroup', label: '코드분류'},
+    {key: 'codeGroupName', label: '코드분류명'},
+    {key: 'startDate', label: '시작일', type: 'date'},
+    {key: 'endDate', label: '종료일', type: 'date'},
+    {key: 'dataChangeYn', label: '자료변경여부'},
+    {key: 'remark', label: '비고', multiline: true, wide: true}
+  ], grids: [['common', '공통코드'], ['system', '시스템코드관리']]}
 };
 
-/* 표의 열 이름과 입력 종류 — 키: '<정의서 탭>.<표 키>' (types: 열 번호 → input type)
-   ※ 개요 두 개(object.overview, code.overview)를 뺀 나머지 열은 임시안입니다. 항목이 확정되면 여기만 고치면 됩니다.
+/* 예전 '개요' 표(첫 줄)를 정의 칸으로 옮길 때의 순서 — 공통코드관리의 개요 표 [코드분류, 코드분류명, 시작일, 종료일] 가 정의 칸이 됨
+   (screen-data.js overviewRowToInfo) */
+const LEGACY_OVERVIEW_INFO = {code: ['codeGroup', 'codeGroupName', 'startDate', 'endDate']};
+
+/* 표의 열 이름과 입력 종류 — 키: '<정의서 탭>.<표 키>'
+   types: 열 번호 → 'date'(날짜 글 입력칸) | 'select'(고르는 칸)
+   options: 열 번호 → 고르는 값 목록 (첫 값이 기본값 — 새 줄 · 지운 칸 · 목록에 없는 값은 기본값)
+   ※ object.overview · code.common · service 표 세 개를 뺀 나머지 열은 임시안입니다. 항목이 확정되면 여기만 고치면 됩니다.
      열을 바꿔도 저장된 값은 열 순서대로 들어가므로, 열 순서를 바꿀 때는 기존 데이터를 확인하세요. */
 const GRID_COLUMNS = {
-  'service.overview': {cols: ['서비스ID', '서비스명', '설명'], types: {}},
-  'service.attrs': {cols: ['속성ID', '속성명', '타입', '필수', '설명'], types: {}},
-  'service.funcs': {cols: ['기능ID', '기능명', '설명'], types: {}},
+  'service.overview': {cols: ['속성타입', '값타입', '트랜잭션 속성명', '기본값', '비고'], types: {}},
+  'service.attrs': {cols: ['기능구분', '기능명', '적용순서', '요청메세지 이름', '응답메세지 이름', '결과트리반환'], types: {}},
+  'service.funcs': {cols: ['사용자그룹ID', '사용자그룹명', '적용여부'], types: {2: 'select'}, options: {2: ['미적용', '적용']}},
+  'service.preprocess': {cols: ['옵션명', '값', '비고'], types: {}},
   'object.overview': {cols: ['이름', '화면표시명', '링크', '유형', '높이', '넓이'], types: {}},
   'object.attrs': {cols: ['속성명', '값', '설명'], types: {}},
   'object.children': {cols: ['이름', '화면표시명', '유형', '설명'], types: {}},
-  'code.overview': {cols: ['코드분류', '코드분류명', '시작일', '종료일'], types: {2: 'date', 3: 'date'}},
-  'code.common': {cols: ['코드분류', '코드', '코드명', '정렬순서', '사용여부'], types: {}},
-  'code.system': {cols: ['코드분류', '코드', '코드명', '정렬순서', '사용여부'], types: {}}
+  'code.common': {cols: ['순번', '코드', '코드명', '시작일', '종료일', '주코드', '시스템코드', '참조코드', '어휘코드', '코드약명', '외국어명', '비고'],
+    types: {3: 'date', 4: 'date'}},
+  'code.system': {cols: ['코드분류', '코드', '코드명', '정렬순서', '사용여부'], types: {}},
+  // SQL 블록마다 하나씩 있는 파라미터 표 (screen-blocks.js)
+  'sql.params': {cols: ['파라미터명', '순서', '파라미터 유형', '인아웃 유형'], types: {}}
 };
+
+/* SQL 블록 위쪽의 'SQL 정의' 칸 — key 는 meta.sqlBlocks[종류][].info 에 저장되는 이름 (그리기: screen.js infoFieldsHtml)
+   options: 고르는 칸(첫 값 '' = 고르지 않음) · multiline: 여러 줄 · wide: 한 줄 전체 · type: 'date' 날짜(20260101 → 2026-01-01) */
+const SQL_INFO_FIELDS = [
+  {key: 'displayName', label: '화면표시명'},
+  {key: 'dataSource', label: '데이터소스'},
+  {key: 'useYn', label: '사용여부'},
+  {key: 'version', label: '버전'},
+  {key: 'status', label: '상태'},
+  {key: 'comment', label: '커맨트', multiline: true, wide: true}
+];
 
 /* 표로 바꾸기 전의 정의서 파일 — <탭>/items.json 이 없을 때 이 내용을 '기본' 항목 하나로 옮겨 보여 줍니다(screen-data.js loadDefItems).
    글은 줄·칸으로 나눠 표에 넣습니다(붙여넣기와 같은 규칙). 예전 파일은 지우지 않습니다. */

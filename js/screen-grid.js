@@ -1,6 +1,7 @@
 /* ==========================================================================
-   screen-grid.js — 표(그리드) 기능 (서비스 · 오브젝트 · 코드분류의 모든 표)
-     표 모양은 screen.js 의 gridHtml / gridRowHtml — 칸마다 <input>, 표 요소에 고유 id 와 열 구성(data-cols)
+   screen-grid.js — 표(그리드) 기능 (서비스 · 오브젝트 · 공통코드관리의 모든 표 + SQL 파라미터 표)
+     표 모양은 screen.js 의 gridHtml / gridRowHtml — 칸마다 <input>(고르는 열은 <select>), 표 요소에 고유 id 와 열 구성(data-cols)
+     고르는 칸: 방향키는 칸 이동(값은 마우스 · 글자 입력 · Alt+↓ 로 고름), 지우면 기본값(첫 값), 목록에 없는 값을 붙여넣으면 기본값
 
      - 행 추가 · 삭제
      - 셀 범위 선택: 드래그 · Shift+클릭 · Shift+방향키 → 파란색으로 표시
@@ -13,6 +14,7 @@
      - 여러 칸 · 여러 줄 붙여넣기 (덮어쓰기)
      - 되돌리기(Ctrl+Z) · 다시 실행(Ctrl+Y): 붙여넣기 · 범위 지우기
      - 날짜 칸: 20260101 처럼 숫자만 쳐도 칸을 떠날 때 2026-01-01 로 맞춤. 날짜가 아니면 빨갛게 표시
+     - 읽기 전용 표(칸이 readonly — 잠긴 기존 SQL 의 파라미터 표): 고르기 · 복사 · 이동만 되고 붙여넣기 · 지우기 · 줄 추가는 막음
    ========================================================================== */
 
 /* 지금 선택된 범위 {table, anchor: {row, col}, focus: {row, col}} — 없으면 null. anchor 는 시작 칸(입력 커서가 있는 칸) */
@@ -31,11 +33,31 @@ function gridCellPosition(cell) {
   return {row: [...td.closest('tbody').rows].indexOf(td.parentElement), col: td.cellIndex};
 }
 
-/** 위치의 입력칸 (없으면 null) */
+/** 위치의 입력칸 (없으면 null) — 글 입력칸 또는 고르는 칸 */
 function gridCellInput(table, {row, col}) {
   const tr = table.tBodies[0].rows[row];
   const td = tr && tr.cells[col];
-  return td ? td.querySelector('input') : null;
+  return td ? td.querySelector(GRID_CELL_SELECTOR) : null;
+}
+
+/** 표의 칸 요소인지 (글 입력칸 · 고르는 칸) */
+const isGridCellElement = element => !!element && (element.tagName === 'INPUT' || element.tagName === 'SELECT') && !!element.closest('table.grid');
+
+/** 고칠 수 없는 칸인지 (잠긴 표: 글 칸은 readonly, 고르는 칸은 disabled) */
+const isGridCellLocked = cell => cell.readOnly || cell.disabled;
+
+/**
+ * 칸에 값 넣기 (붙여넣기 · 지우기)
+ * @returns {boolean} 고르는 칸에 목록에 없는 값이 와서 기본값으로 바꿨으면 false
+ */
+function setGridCellValue(cell, value) {
+  if (cell.tagName !== 'SELECT') {
+    cell.value = value;
+    return true;
+  }
+  const allowed = [...cell.options].some(option => option.value === value);
+  cell.value = allowed ? value : cell.options[0].value;
+  return allowed || !value;
 }
 
 /** 위치를 표 안으로 맞춤 */
@@ -49,7 +71,7 @@ function focusGridCell(table, position) {
   const input = gridCellInput(table, position);
   if (!input) return;
   input.focus();
-  input.select();
+  if (input.tagName === 'INPUT') input.select();
 }
 
 /* ======================= 범위 선택 ======================= */
@@ -127,7 +149,7 @@ function clearGridSelectionCells(selection) {
     for (let col = left; col <= right; col++) {
       const input = gridCellInput(table, {row, col});
       if (input) {
-        input.value = '';
+        setGridCellValue(input, '');   // 고르는 칸은 기본값으로
         input.classList.remove('invalid');
       }
     }
@@ -139,7 +161,7 @@ function clearGridSelectionCells(selection) {
 
 /** 누름: 표 칸이면 끌기 시작(Shift 면 범위 넓히기), 표 밖이면 범위 선택 풀기 */
 function handleGridMouseDown(e) {
-  const input = e.target.closest ? e.target.closest('table.grid input') : null;
+  const input = e.target.closest ? e.target.closest('table.grid input, table.grid select') : null;
   if (!input) {
     clearGridSelection();
     return;
@@ -150,7 +172,7 @@ function handleGridMouseDown(e) {
   if (e.shiftKey) {
     // 범위의 시작 칸: 이미 고른 범위의 시작 → 지금 커서가 있는 같은 표의 칸 → 누른 칸
     const focused = document.activeElement;
-    const focusedInTable = focused && focused.tagName === 'INPUT' && focused.closest('table') === table;
+    const focusedInTable = isGridCellElement(focused) && focused.closest('table') === table;
     const anchor = gridSelection && gridSelection.table === table ? gridSelection.anchor
       : focusedInTable ? gridCellPosition(focused) : position;
     e.preventDefault();   // 글자 선택·커서 이동 대신 범위 선택
@@ -173,7 +195,7 @@ function handleGridMouseOver(e) {
     gridDrag.ranging = true;
     document.body.classList.add('grid-dragging');
     const anchorInput = gridCellInput(gridDrag.table, gridDrag.anchor);
-    anchorInput.setSelectionRange(0, 0);
+    if (anchorInput.tagName === 'INPUT') anchorInput.setSelectionRange(0, 0);
     anchorInput.blur();
     window.getSelection().removeAllRanges();
   }
@@ -188,7 +210,7 @@ function handleGridMouseUp() {
     const anchorInput = gridCellInput(gridDrag.table, gridDrag.anchor);
     if (anchorInput) {
       anchorInput.focus({preventScroll: true});
-      anchorInput.setSelectionRange(anchorInput.value.length, anchorInput.value.length);
+      if (anchorInput.tagName === 'INPUT') anchorInput.setSelectionRange(anchorInput.value.length, anchorInput.value.length);
     }
   }
   gridDrag = null;
@@ -198,9 +220,10 @@ function handleGridMouseUp() {
 
 /**
  * 커서가 칸의 끝에 있는지 (←→ 로 옆 칸에 갈지 정할 때)
- * 칸 전체가 선택됐으면(방향키로 들어온 칸) 어느 쪽이든 끝으로 봄
+ * 칸 전체가 선택됐으면(방향키로 들어온 칸) 어느 쪽이든 끝으로 봄. 고르는 칸은 늘 끝으로 봄
  */
 function isCaretAtEdge(input, edge) {
+  if (input.tagName !== 'INPUT') return true;
   const {selectionStart: start, selectionEnd: end, value} = input;
   if (start === 0 && end === value.length) return true;
   if (start !== end) return false;
@@ -224,7 +247,7 @@ function appendGridRow(table) {
 /** 표 칸에서 누른 키 처리 (되돌리기 · 복사 · 지우기 · 칸 이동 · 범위 넓히기) */
 function handleGridKeydown(e) {
   const input = e.target;
-  const table = input.tagName === 'INPUT' ? input.closest('table.grid') : null;
+  const table = isGridCellElement(input) ? input.closest('table.grid') : null;
   if (!table || e.isComposing || e.keyCode === 229) return;   // 한글 조합 중에는 건드리지 않음
   if (handleGridUndoRedo(e, table)) return;
 
@@ -233,16 +256,18 @@ function handleGridKeydown(e) {
   const selection = gridSelection && gridSelection.table === table ? gridSelection : null;
   const multi = isMultiCellSelection(selection);
 
+  const readOnly = isGridCellLocked(input);
   if (ctrl && multi && (key.toLowerCase() === 'c' || key.toLowerCase() === 'x')) {
     e.preventDefault();
     writeClipboardText(gridSelectionText(selection));
-    if (key.toLowerCase() === 'x') clearGridSelectionCells(selection);
-    toast(key.toLowerCase() === 'x' ? '잘라 냈습니다.' : '복사했습니다.');
+    const cut = key.toLowerCase() === 'x' && !readOnly;   // 읽기 전용 표는 잘라 내기도 복사만
+    if (cut) clearGridSelectionCells(selection);
+    toast(cut ? '잘라 냈습니다.' : '복사했습니다.');
     return;
   }
   if (multi && (key === 'Delete' || key === 'Backspace')) {
     e.preventDefault();
-    clearGridSelectionCells(selection);
+    if (!readOnly) clearGridSelectionCells(selection);
     return;
   }
   if (key === 'Escape' && selection) {
@@ -275,7 +300,7 @@ function handleGridKeydown(e) {
     if (!target) return;   // 표 끝: 평소처럼 다음 요소로
   } else if (steps[key]) {
     target = {row: position.row + steps[key][0], col: position.col + steps[key][1]};
-    if (key === 'Enter' && !e.shiftKey && target.row >= table.tBodies[0].rows.length) appendGridRow(table);
+    if (key === 'Enter' && !e.shiftKey && !readOnly && target.row >= table.tBodies[0].rows.length) appendGridRow(table);
     target = clampGridPosition(table, target.row, target.col);
   } else {
     return;
@@ -300,10 +325,10 @@ function toDateInputValue(text) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-/** 날짜 칸을 떠날 때: 알아볼 수 있으면 2026-01-01 형식으로, 아니면 그대로 두고 빨갛게 */
+/** 날짜 칸(표 · 정의 칸)을 떠날 때: 알아볼 수 있으면 2026-01-01 형식으로, 아니면 그대로 두고 빨갛게 */
 function handleGridDateChange(e) {
   const input = e.target;
-  if (!input.matches || !input.matches('table.grid input[data-type="date"]')) return;
+  if (!input.matches || !input.matches('input[data-type="date"]')) return;
   const value = input.value.trim();
   const date = value ? toDateInputValue(value) : '';
   if (date) input.value = date;
@@ -355,8 +380,8 @@ function parsePastedTable(text) {
  */
 function handleGridPaste(e) {
   const input = e.target;
-  const table = input.tagName === 'INPUT' ? input.closest('table.grid') : null;
-  if (!table) return;
+  const table = isGridCellElement(input) ? input.closest('table.grid') : null;
+  if (!table || isGridCellLocked(input)) return;
   const rows = parsePastedTable(e.clipboardData && e.clipboardData.getData('text/plain'));
   if (!rows) return;
   e.preventDefault();
@@ -367,11 +392,11 @@ function handleGridPaste(e) {
   const {row: startRow, col: startCol} = gridCellPosition(input);
   rememberGridState(table.id, body, startRow, startCol);
   clearGridSelection();
-  let droppedCount = 0, badDateCount = 0;
+  let droppedCount = 0, badDateCount = 0, badChoiceCount = 0;
 
   rows.forEach((cells, offset) => {
     while (body.rows.length <= startRow + offset) body.insertAdjacentHTML('beforeend', gridRowHtml(columnsKey, []));
-    const rowInputs = body.rows[startRow + offset].querySelectorAll('input');
+    const rowInputs = body.rows[startRow + offset].querySelectorAll(GRID_CELL_SELECTOR);
     cells.forEach((value, i) => {
       const col = startCol + i;
       if (col >= cols.length) {
@@ -383,8 +408,8 @@ function handleGridPaste(e) {
         if (value && !date) badDateCount++;
         rowInputs[col].value = date;
         rowInputs[col].classList.remove('invalid');
-      } else {
-        rowInputs[col].value = value;
+      } else if (!setGridCellValue(rowInputs[col], value)) {
+        badChoiceCount++;
       }
     });
   });
@@ -396,6 +421,7 @@ function handleGridPaste(e) {
   let message = `${rows.length}줄을 붙여넣었습니다. 잘못 붙였으면 Ctrl+Z 로 되돌릴 수 있습니다.`;
   if (droppedCount) message += ` 표의 칸 수(${cols.length}칸)를 넘는 값 ${droppedCount}개는 버렸습니다.`;
   if (badDateCount) message += ` 날짜로 알아볼 수 없는 값 ${badDateCount}개는 비웠습니다.`;
+  if (badChoiceCount) message += ` 고를 수 없는 값 ${badChoiceCount}개는 기본값으로 넣었습니다.`;
   toast(message);
 }
 
@@ -412,7 +438,7 @@ function handleGridPaste(e) {
 const MAX_GRID_PASTE_UNDO = 20;
 
 /** 표의 지금 모습 (빈 줄 포함, 모든 칸 값) */
-const gridSnapshot = body => [...body.rows].map(row => [...row.querySelectorAll('input')].map(cell => cell.value));
+const gridSnapshot = body => [...body.rows].map(row => [...row.querySelectorAll(GRID_CELL_SELECTOR)].map(cell => cell.value));
 
 /** 이 표의 되돌리기·다시 실행 기록 (없으면 빈 기록을 만듦) */
 function gridPasteHistoryOf(tableId) {

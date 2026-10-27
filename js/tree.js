@@ -84,6 +84,10 @@ async function matchesSearch(dir, name, meta) {
   const summary = [name, meta && meta.ticket, meta && meta.worker, meta && meta.origin].filter(Boolean).join('\n').toLowerCase();
   if (summary.includes(query)) return true;
   if (!meta) return false;
+  // SQL 정의 · 파라미터는 meta.json 안에 있음
+  const sqlDefinitionText = Object.values(meta.sqlBlocks || {}).flat()
+    .flatMap(block => [...Object.values(block.info || {}), ...(block.params || []).flat()]).join('\n').toLowerCase();
+  if (sqlDefinitionText.includes(query)) return true;
 
   // 내용까지 찾을 파일: 메모 + 정의서(표 · 예전 글) + SQL 블록 (예전 구조 파일 포함)
   const files = [

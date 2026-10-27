@@ -15,6 +15,8 @@
   --del: #fdecea; --add: #e6f4ea;
   /* 표(그리드) 칸 색 — 입력 중인 칸 / 그 칸의 안쪽 선 / 범위로 선택한 칸 (screen-grid.js) */
   --grid-focus-bg: #eaf3ff; --grid-focus-line: #9cc3f5; --grid-sel-bg: #dbe7f8;
+  --pill-add-bg: #2579d5; --pill-add-hover: #1d66b6;   /* 탭 줄의 [+ … 추가] 단추 */
+  --filled-bg: #eef5ff;   /* 내용이 들어 있는 정의 칸 */
   --sans: "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
   --mono: D2Coding, Consolas, monospace;
   --r: 6px; --r-l: 8px;
@@ -208,6 +210,8 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .fld { display: flex; flex-direction: column; gap: 6px; font-size: 12px; font-weight: 600; color: #3d4248; margin-bottom: 18px; }
 .fld-h { display: flex; align-items: center; justify-content: space-between; }
 .fld-l { font-size: 12px; font-weight: 600; color: #3d4248; }
+/* 표 제목 (제목 줄 오른쪽 끝에 [+ 행 추가]) */
+.fld-l.grid-title { font-size: 14px; color: var(--ink); }
 .fld small { font-weight: 400; }
 .fld input[type=text], .inp { height: 34px; padding: 0 10px; border: 1px solid var(--field); border-radius: var(--r); background: #fff; color: var(--ink); font-weight: 400; width: 100%; }
 .fld input[type=text]:focus, .inp:focus { border-color: var(--acc); outline: 0; box-shadow: 0 0 0 3px var(--acc-soft); }
@@ -250,7 +254,6 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .wlog-in textarea { flex: 1; min-width: 0; min-height: 52px; padding: 6px 8px; border: 1px solid var(--field); border-radius: var(--r);
   background: #fff; font: inherit; font-size: 13px; resize: vertical; }
 .wlog-in textarea:focus { border-color: var(--acc); outline: 0; }
-.btn-add.sm { width: auto; height: 32px; padding: 0 14px; margin-top: 8px; }
 .empty-box { padding: 40px 20px; border: 1px dashed #c9ced5; border-radius: var(--r-l); text-align: center; }
 .empty-box b { color: var(--ink); }
 
@@ -301,9 +304,30 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .sqltab.on .sqltab-x { color: rgba(255, 255, 255, .7); }
 .sqltab.on .sqltab-x:hover { background: rgba(255, 255, 255, .16); color: #fff; }
 .sqltabs-tools { flex: none; display: flex; gap: 6px; }
+/* 탭 줄 오른쪽 [+ SQL 추가] · [+ 서비스 추가] 등 항목 추가 단추 */
+.btn.btn-pill-add { border-color: var(--pill-add-bg); background: var(--pill-add-bg); color: #fff; }
+.btn.btn-pill-add:hover { border-color: var(--pill-add-hover); background: var(--pill-add-hover); color: #fff; }
 /* 정의서 항목 본문 (서비스 · 오브젝트 · 코드분류) — 표 여러 개 */
 .def-grids { padding: 14px 14px 2px; }
 .def-grids .fld { margin-bottom: 16px; }
+/* 정의 칸(SQL 정의 · 공통코드 정의 — screen.js infoFieldsHtml) · SQL 파라미터 표(이력 바로 위) */
+.infobox { padding: 10px 12px 12px; border-bottom: 1px solid var(--line); }
+.infobox-g { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 12px; }
+.infobox-f { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 12px; color: var(--sub); }
+.infobox-f.wide { grid-column: 1 / -1; }
+.infobox-f input, .infobox-f select, .infobox-f textarea { width: 100%; padding: 0 8px; border: 1px solid var(--field); border-radius: var(--r);
+  background: #fff; color: var(--ink); font-size: 13px; }
+.infobox-f input, .infobox-f select { height: 30px; }
+.infobox-f textarea { min-height: 52px; padding: 6px 8px; resize: vertical; }
+.infobox-f input:focus, .infobox-f select:focus, .infobox-f textarea:focus { border-color: var(--acc); outline: 0; box-shadow: 0 0 0 3px var(--acc-soft); }
+.infobox-f input[readonly], .infobox-f textarea[readonly], .infobox-f select:disabled { background: var(--soft); box-shadow: none; }
+/* 내용이 있는 칸은 연한 파란 배경 (잠긴 칸도 같음) — 빈 칸 판단은 placeholder 로 (screen.js infoFieldsHtml) */
+.infobox-f input:not(:placeholder-shown), .infobox-f textarea:not(:placeholder-shown) { background: var(--filled-bg); }
+.infobox-f input.invalid { border-color: var(--bad); }   /* 날짜로 알아볼 수 없는 값 */
+.sqlparams { padding: 12px 12px 0; border-top: 1px solid var(--line); }
+.sqlparams .fld { margin-bottom: 12px; }
+/* 잠긴 기존 SQL: 파라미터 표의 행 추가 · 삭제 단추 숨김 */
+.blocks.locked .sqlparams [data-add], .blocks.locked .sqlparams [data-del] { visibility: hidden; }
 .sqltabs-empty { margin-bottom: 10px; padding: 28px 16px; border: 1px dashed #c9ced5; border-radius: var(--r-l); color: var(--sub); text-align: center; font-size: 13px; }
 /* 마우스를 올리면 나타나는 복사 아이콘 — SQL 편집기 오른쪽 위, 제목칸 오른쪽 끝 */
 .copy-hover { position: absolute; z-index: 10; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
@@ -314,7 +338,16 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .ed > .copy-hover { top: 6px; right: 20px; }   /* 세로 스크롤바를 가리지 않게 */
 .bt-wrap > .copy-hover { top: 3px; right: 3px; }
 .bt-wrap.has-copy .bt { padding-right: 34px; }   /* 복사 아이콘 자리 (신규 SQL 제목만) */
-.ed:hover > .copy-hover, .bt-wrap:hover > .copy-hover { opacity: 1; pointer-events: auto; }
+.ed:hover > .copy-hover, .bt-wrap:hover > .copy-hover, .copy-wrap:hover > .copy-hover { opacity: 1; pointer-events: auto; }
+/* 정의 칸의 복사 아이콘 (오른쪽 끝) */
+.copy-wrap { position: relative; display: block; }
+.copy-wrap > .copy-hover { top: 2px; right: 2px; }
+.infobox-f .copy-wrap > input { padding-right: 32px; }
+.infobox-f .copy-wrap > textarea { padding-right: 34px; }
+/* 입력칸 안의 복사 아이콘(SQL 제목 · SQL 정의): 테두리 없이 흰 배경 (편집기 오른쪽 위 아이콘은 그대로) */
+.bt-wrap > .copy-hover, .copy-wrap > .copy-hover, .bt-wrap > .copy-hover:hover, .copy-wrap > .copy-hover:hover { border: 0; background: #fff; }
+/* 칸이 비어 있으면 복사 아이콘을 보이지 않음 */
+.bt-wrap:has(> .bt:placeholder-shown) > .copy-hover, .copy-wrap:has(> :placeholder-shown) > .copy-hover { display: none; }
 .chg { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: #f1f3f6; color: #3d4248; }
 .chg.warn { background: var(--warn-bg); color: var(--warn); } .chg.ok { background: var(--ok-bg); color: var(--ok); }
 .chg:empty { display: none; }
@@ -370,13 +403,17 @@ table.grid th + th, table.grid td + td { border-left: 1px solid var(--line2); }
    ※ 표가 정의서의 .fld 안에 있어 '.fld input[type=text]'(흰 배경·테두리·포커스 그림자)가 걸리므로, 그보다 우선하도록 [type="text"]까지 붙여 덮어씀 */
 table.grid input[type="text"] { width: 100%; height: 34px; padding: 0 10px; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--ink); font-weight: 400; }
 table.grid input[type="text"]:focus { outline: 0; border: 0; background: transparent; box-shadow: none; }
+/* 고르는 칸 (예: 적용여부) — 글 칸과 같은 높이 · 테두리 없이 */
+table.grid select { width: 100%; min-width: 80px; height: 34px; padding: 0 6px; border: 0; border-radius: 0; background: transparent; color: var(--ink); font-weight: 400; cursor: pointer; }
+table.grid select:focus { outline: 0; }
+table.grid select:disabled { cursor: default; opacity: 1; }
 /* 입력 중인 칸: 칸 전체를 연한 파란색 + 옅은 파란 안쪽 선 (엑셀의 '선택된 칸'처럼) */
-table.grid td:has(> input:focus) { background: var(--grid-focus-bg); box-shadow: inset 0 0 0 1px var(--grid-focus-line); }
+table.grid td:has(> input:focus), table.grid td:has(> select:focus) { background: var(--grid-focus-bg); box-shadow: inset 0 0 0 1px var(--grid-focus-line); }
 table.grid td:last-child { width: 40px; text-align: center; }
 table.grid .icon { width: 26px; height: 26px; border: 0; background: transparent; }
 /* 셀 범위 선택 (screen-grid.js) */
 table.grid td.cell-sel { background: var(--grid-sel-bg); }
-table.grid td.cell-sel:has(> input:focus) { background: var(--grid-focus-bg); }   /* 범위 안에서 커서가 있는 시작 칸은 입력 중 색으로 */
+table.grid td.cell-sel:has(> input:focus), table.grid td.cell-sel:has(> select:focus) { background: var(--grid-focus-bg); }   /* 범위 안에서 커서가 있는 시작 칸은 입력 중 색으로 */
 body.grid-dragging, body.grid-dragging * { user-select: none; cursor: cell; }
 /* 날짜 칸에 날짜가 아닌 값 (입력 중에도 빨간 선이 보이게 :focus 까지) */
 table.grid input.invalid, table.grid input.invalid:focus { color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }

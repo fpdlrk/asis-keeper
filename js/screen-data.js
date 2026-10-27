@@ -45,7 +45,7 @@ async function findAllScreens(dir, path = [], found = []) {
 /**
  * SQL 블록 목록 읽기 (예전 단일 파일 구조 asis/sql.sql, tobe/sql.sql 도 읽음)
  * @param {'asis'|'tobe'} kind
- * @returns {Promise<{id, title, file, rb?, sql, rbText}[]>} rb = (예전) 롤백 SQL 파일
+ * @returns {Promise<{id, title, file, rb?, info?, params?, paramIds, sql, rbText}[]>} rb = (예전) 롤백 SQL 파일
  */
 async function loadSqlBlocks(dir, meta, kind) {
   let list = meta.sqlBlocks && meta.sqlBlocks[kind];
@@ -61,6 +61,7 @@ async function loadSqlBlocks(dir, meta, kind) {
   for (const block of list) {
     blocks.push({
       ...block,
+      paramIds: rowIdsOf(block.params, block.paramIds),
       sql: await readText(dir, block.file) || '',
       rbText: block.rb ? (await readText(dir, block.rb)) || '' : ''
     });
@@ -94,13 +95,27 @@ function findPairedAsisBlock(tobeBlock, order, asisBlocks) {
 async function findChangedFiles(dir, hashes, {stopAtFirst = false} = {}) {
   const changed = [];
   for (const [path, savedHash] of Object.entries(hashes || {})) {
-    const file = await readFile(dir, path);
+    // meta.json 안의 값(META_HASH_TARGETS)은 그 값을 글로 바꿔 비교
+    const file = path in META_HASH_TARGETS
+      ? metaHashBlob(path, await readJson(dir, 'meta.json', {}))
+      : await readFile(dir, path);
     if (!file) changed.push({path, reason: '파일 없음'});
     else if (await sha256(file) !== savedHash) changed.push({path, reason: '내용이 달라짐'});
     if (stopAtFirst && changed.length) break;
   }
   return changed;
 }
+
+/** META_HASH_TARGETS 의 값을 해시용 Blob 으로 (잠글 때와 확인할 때 같은 방식) */
+const metaHashBlob = (key, meta) => new Blob([JSON.stringify(META_HASH_TARGETS[key](meta))], {type: 'application/json'});
+
+/* ======================= 표의 줄 id ======================= */
+
+/** 줄 id 가 없는 예전 데이터: 순서대로 'L0', 'L1' … (원본과 신규가 같은 순서끼리 짝지어짐) */
+const legacyRowIds = rows => (rows || []).map((_, i) => LEGACY_ROW_ID_PREFIX + i);
+
+/** 저장된 줄 id (없거나 줄 수와 다르면 예전 방식 id) */
+const rowIdsOf = (rows, ids) => (Array.isArray(ids) && ids.length === (rows || []).length ? ids : legacyRowIds(rows));
 
 /* ======================= 정의서 항목 (서비스 · 오브젝트 · 공통코드관리) ======================= */
 
@@ -153,23 +168,68 @@ async function readLegacyDefItem(dir, tab) {
   return {id: LEGACY_DEF_ITEM.id, title: LEGACY_DEF_ITEM.title, info, grids, log: []};
 }
 
-/**
- * 정의서 탭의 항목 목록 읽기 (화면·보고서가 함께 씀)
- *   <탭>/items.json 이 있으면 그것을, 없으면 예전 파일을 '기본' 항목으로 옮겨 보여 줌
- *   (예전 내용도 이미 등록했던 내용이므로 등록된 것으로 봄. 다음 [등록] 때 items.json 으로 저장됨)
- * @returns {Promise<{id, title, info, grids, log}[]>}
- */
-async function loadDefItems(dir, tab) {
-  const saved = await readJson(dir, DEF_TABS[tab].file, null);
-  if (!Array.isArray(saved)) {
-    const legacyItem = await readLegacyDefItem(dir, tab);
-    return legacyItem ? [legacyItem] : [];
-  }
-  return saved.map(item => ({
+/** 정의서 파일 경로: 원본 <dir>/asis.json · 신규 <dir>/tobe.json */
+const defLayerFile = (tab, layer) => `${DEF_TABS[tab].dir}/${layer}.json`;
+
+/** 원본/신규로 나누기 전의 정의서 파일 경로 (<dir>/items.json) */
+const legacyDefItemsFile = tab => `${DEF_TABS[tab].dir}/${LEGACY_DEF_ITEMS_FILE}`;
+
+/** 정의서 탭의 모든 데이터 파일 (검색 · 복사할 때 이력 지우기) */
+const defDataFiles = tab => [defLayerFile(tab, 'asis'), defLayerFile(tab, 'tobe'), legacyDefItemsFile(tab)];
+
+/** 저장된 항목을 화면에서 쓰는 모양으로 (빠진 값 채우기 · 예전 개요 표 → 정의 칸 · 줄 id) */
+function normalizeDefItem(tab, item) {
+  const grids = {...emptyDefGrids(tab), ...(item.grids || {})};
+  const rowIds = Object.fromEntries(Object.keys(grids).map(key => [key, rowIdsOf(grids[key], (item.rowIds || {})[key])]));
+  return {
     id: item.id,
+    ...(item.asisId !== undefined ? {asisId: item.asisId} : {}),
     title: item.title || '',
     info: item.info || overviewRowToInfo(tab, item.grids && item.grids.overview),   // 정의 칸이 생기기 전 항목은 개요 표에서
-    grids: {...emptyDefGrids(tab), ...(item.grids || {})},
+    grids,
+    rowIds,
     log: item.log || []
-  }));
+  };
 }
+
+/** 정의서 파일 하나 읽기 (없으면 null) */
+async function readDefFile(dir, tab, path) {
+  const saved = await readJson(dir, path, null);
+  return Array.isArray(saved) ? saved.map(item => normalizeDefItem(tab, item)) : null;
+}
+
+/**
+ * 원본 항목 위에 신규 항목 만들기 — 신규 단계에서 '복사해서 고치기'의 시작점
+ * 새 id 를 주고 asisId 로 원본을 가리킵니다. 표의 줄 id 는 그대로 두어 줄끼리 짝지어집니다.
+ */
+const copyDefItemAsTobe = item => ({...JSON.parse(JSON.stringify(item)), id: newId('d'), asisId: item.id});
+
+/**
+ * 정의서 탭의 원본 · 신규 항목 읽기 (화면 · 보고서 · 잠그기가 함께 씀)
+ *   원본: asis.json → 없으면 예전 items.json → 그것도 없으면 더 예전 파일(글 입력란 · 개요 표)을 '기본' 항목으로
+ *   신규: tobe.json → 없으면 잠긴 화면은 원본을 복사해 시작(아직 신규 작업 전), 잠그기 전이면 빈 목록
+ * @param {boolean} locked 원본이 잠겼는지 (meta.asisLocked)
+ * @returns {Promise<{asis: object[], tobe: object[]}>}
+ */
+async function loadDefLayers(dir, tab, locked) {
+  let asis = await readDefFile(dir, tab, defLayerFile(tab, 'asis'));
+  if (!asis) asis = await readDefFile(dir, tab, legacyDefItemsFile(tab));
+  if (!asis) {
+    const legacyItem = await readLegacyDefItem(dir, tab);
+    asis = legacyItem ? [normalizeDefItem(tab, legacyItem)] : [];
+  }
+  let tobe = await readDefFile(dir, tab, defLayerFile(tab, 'tobe'));
+  if (!tobe) tobe = locked ? asis.map(copyDefItemAsTobe) : [];
+  return {asis, tobe};
+}
+
+/** 정의서 항목을 파일에 저장하는 모양으로 (빈 정의 칸 · 빈 이력은 적지 않음) */
+const storedDefItem = item => ({
+  id: item.id,
+  ...(item.asisId !== undefined ? {asisId: item.asisId} : {}),
+  title: item.title,
+  ...(Object.keys(item.info || {}).length ? {info: item.info} : {}),
+  grids: item.grids,
+  rowIds: item.rowIds,
+  ...(item.log && item.log.length ? {log: item.log} : {})
+});

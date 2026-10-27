@@ -58,7 +58,7 @@ async function collectScreenReportData(screenInfo) {
   const {dir, meta} = screenInfo;
   const data = {...screenInfo, statusName: statusOf(meta), texts: {}, defs: {}};
   for (const [fieldId, file] of Object.entries(TEXT_FIELD_FILES)) data.texts[fieldId] = await readText(dir, file) || '';
-  for (const tab of Object.keys(DEF_TABS)) data.defs[tab] = await loadDefItems(dir, tab);   // 예전 파일만 있으면 '기본' 항목으로
+  for (const tab of Object.keys(DEF_TABS)) data.defs[tab] = await loadDefLayers(dir, tab, !!meta.asisLocked);   // {asis, tobe}
   data.files = {
     asis: await collectFileInfos(dir, FILE_DIRS.asis),
     tobe: await collectFileInfos(dir, FILE_DIRS.tobe),
@@ -76,6 +76,45 @@ async function collectScreenReportData(screenInfo) {
 const reportTableHtml = (columns, rows) => '<table class="t"><thead><tr>' + columns.map(col => `<th>${escapeHtml(col)}</th>`).join('') + '</tr></thead><tbody>'
   + rows.map(row => '<tr>' + row.map(cell => `<td>${escapeHtml(cell)}</td>`).join('') + '</tr>').join('') + '</tbody></table>';
 
+/**
+ * 정의 칸 표 (값이 있거나 원본과 다른 칸만): [항목, 값] 또는 원본이 있으면 [항목, 값, 원본(바뀐 칸만)]
+ * @param {object|null} originalInfo 원본 값 (null = 비교하지 않음)
+ * @returns {string} 보일 칸이 없으면 ''
+ */
+function reportInfoTableHtml(fields, info, originalInfo) {
+  const changed = new Set(originalInfo ? changedInfoKeys(fields, originalInfo, info) : []);
+  const rows = fields
+    .filter(({key}) => comparableValue((info || {})[key]) || changed.has(key))
+    .map(({key, label}) => {
+      const row = [label, comparableValue((info || {})[key])];
+      return originalInfo ? [...row, changed.has(key) ? comparableValue(originalInfo[key]) || '(빈 칸)' : ''] : row;
+    });
+  if (!rows.length) return '';
+  return reportTableHtml(originalInfo ? ['항목', '값', '원본 (바뀐 칸)'] : ['항목', '값'], rows);
+}
+
+/**
+ * 표 (원본과 비교하면 맨 앞에 '구분' 열: 추가 · 변경 · 삭제, 바뀐 칸은 '값 (원본: …)')
+ * @param {{rows, ids}} grid 표 값
+ * @param {{rows, ids}|null} original 원본 표 (null = 비교하지 않음)
+ * @returns {string} 줄이 없으면 ''
+ */
+function reportGridTableHtml(columns, grid, original) {
+  const cellsOf = cells => columns.map((_, col) => comparableValue(cells[col]));
+  if (!original) return grid.rows.length ? reportTableHtml(columns, grid.rows.map(cellsOf)) : '';
+  const diff = diffGridRows(original, grid, columns.length);
+  const originalById = new Map(original.ids.map((id, i) => [id, original.rows[i] || []]));
+  const rows = grid.rows.map((cells, i) => {
+    const id = grid.ids[i];
+    const changedColumns = diff.changed.get(id) || [];
+    const values = cellsOf(cells).map((value, col) => (changedColumns.includes(col)
+      ? `${value} (원본: ${comparableValue(originalById.get(id)[col]) || '빈 칸'})` : value));
+    return [diff.added.has(id) ? '추가' : changedColumns.length ? '변경' : '', ...values];
+  });
+  diff.deleted.forEach(({cells}) => rows.push(['삭제', ...cellsOf(cells)]));
+  return rows.length ? reportTableHtml(['구분', ...columns], rows) : '';
+}
+
 /** 글 내용 상자 (비어 있으면 '') */
 const reportTextHtml = text => text.trim() ? `<pre class="txt">${escapeHtml(text)}</pre>` : '';
 
@@ -88,7 +127,7 @@ function screenReportHtml(data, index) {
   // 잠금을 푼 적이 있으면 횟수를 함께 적습니다 (사유 전문은 앱의 '잠금 해제 이력'에만 남김)
   const unlockCount = (meta.asisUnlockLog || []).length;
   const integrityState = !meta.asisLocked
-    ? (unlockCount ? '<span class="bad">잠금 해제 상태 (다시 등록되지 않음)</span>' : '<span class="note">기존 내용 미등록</span>')
+    ? (unlockCount ? '<span class="bad">잠금 해제 상태 (다시 등록되지 않음)</span>' : '<span class="note">원본 미등록</span>')
     : data.changedFiles.length
       ? '<span class="bad">변경 감지: ' + escapeHtml(data.changedFiles.join(', ')) + '</span>'
       : '<span class="ok">등록 시점과 일치 (SHA-256)</span>';
@@ -120,12 +159,13 @@ function screenReportHtml(data, index) {
         ? `${escapeHtml(before.title)} → ${escapeHtml(after.title)}`
         : escapeHtml(after.title);
       html += `<h4>${++sqlNo}. ${title}${before ? '' : ' <span class="note">신규 쿼리</span>'}</h4>`
-        + sideBySideHtml(before ? before.sql : '', after.sql, false);
+        + sideBySideHtml(before ? before.sql : '', after.sql, false)
+        + sqlDefinitionReportHtml(after, before);
       if (after.rbText.trim()) html += '<div class="cap" style="margin-top:8px">롤백 SQL</div>' + reportTextHtml(after.rbText);
     });
     for (const before of data.asisBlocks) {
       if (pairedAsisIds.has(before.id) || !before.sql.trim()) continue;
-      html += `<h4>${++sqlNo}. ${escapeHtml(before.title)} <span class="note">신규에 없음</span></h4>`
+      html += `<h4>${++sqlNo}. ${escapeHtml(before.title)} <span class="note">삭제됨 (원본에만 있음)</span></h4>`
         + sideBySideHtml(before.sql, '', false);
     }
   }
@@ -135,9 +175,9 @@ function screenReportHtml(data, index) {
   const tobeByPath = new Map(data.files.tobe.map(f => [f.name, f]));
   const paths = [...new Set([...asisByPath.keys(), ...tobeByPath.keys()])].sort();
   if (paths.length) {
-    html += section('변경 파일') + reportTableHtml(['파일 경로', '구분', '기존 SHA-256', '신규 SHA-256'], paths.map(path => {
+    html += section('변경 파일') + reportTableHtml(['파일 경로', '구분', '원본 SHA-256', '신규 SHA-256'], paths.map(path => {
       const before = asisByPath.get(path), after = tobeByPath.get(path);
-      const kind = before && after ? (before.hash === after.hash ? '변경 없음' : '수정') : before ? '기존 파일(보관)' : '신규';
+      const kind = before && after ? (before.hash === after.hash ? '변경 없음' : '수정') : before ? '원본 파일(보관)' : '신규';
       return [path, kind, before ? before.hash.slice(0, 12) : '-', after ? after.hash.slice(0, 12) : '-'];
     }));
     for (const path of paths) {
@@ -150,7 +190,7 @@ function screenReportHtml(data, index) {
   }
 
   // 정의서
-  for (const tab of Object.keys(DEF_TABS)) html += definitionSectionHtml(section, tab, data.defs[tab]);
+  for (const tab of Object.keys(DEF_TABS)) html += definitionSectionHtml(section, tab, data.defs[tab], !!meta.asisLocked);
 
   // 참고 파일
   if (data.files.attach.length) {
@@ -159,28 +199,46 @@ function screenReportHtml(data, index) {
   return html + '</div>';
 }
 
+/** SQL 블록의 정의 · 파라미터 (원본 블록이 있으면 원본과 비교). 내용이 없으면 '' */
+function sqlDefinitionReportHtml(block, original) {
+  const columns = GRID_COLUMNS['sql.params'].cols;
+  const info = reportInfoTableHtml(SQL_INFO_FIELDS, block.info, original ? original.info || {} : null);
+  const params = reportGridTableHtml(columns, {rows: block.params || [], ids: block.paramIds || []},
+    original ? {rows: original.params || [], ids: original.paramIds || []} : null);
+  return (info ? '<div class="cap" style="margin-top:8px">SQL 정의</div>' + info : '')
+    + (params ? '<div class="cap" style="margin-top:8px">SQL 파라미터</div>' + params : '');
+}
+
 /**
- * 정의서 영역 (서비스 · 오브젝트 · 공통코드관리): 항목마다 이름 + 정의 칸(값이 있는 것) + 내용이 있는 표. 모두 비었으면 ''
+ * 정의서 영역 (서비스 · 오브젝트 · 공통코드관리)
+ *   잠근 뒤: 신규 항목을 원본과 비교해 보여 줌 (항목 상태 · 바뀐 칸 · 표의 구분 열) + 삭제된 원본 항목
+ *   잠그기 전: 원본 항목만
  * 항목 이력은 내부 작업 기록이라 고객 전달용 보고서에는 넣지 않습니다.
+ * @param {{asis: object[], tobe: object[]}} layers loadDefLayers 결과
+ * @returns {string} 보일 항목이 없으면 ''
  */
-function definitionSectionHtml(section, tab, items) {
+function definitionSectionHtml(section, tab, layers, locked) {
   const {label, grids, info: infoFields = []} = DEF_TABS[tab];
-  const infoRows = item => infoFields.filter(({key}) => (item.info || {})[key]).map(field => [field.label, item.info[field.key]]);
-  const hasContent = item => infoRows(item).length || grids.some(([key]) => (item.grids[key] || []).length);
-  const filledItems = (items || []).filter(hasContent);
-  if (!filledItems.length) return '';
-  let html = section(label + ' 정의');
-  for (const item of filledItems) {
-    html += `<h4>${escapeHtml(item.title || UNNAMED_DEF_TITLE)}</h4>`;
-    if (infoRows(item).length) html += `<div class="cap">정의</div>` + reportTableHtml(['항목', '값'], infoRows(item));
+  const entries = locked
+    ? [
+      ...layers.tobe.map(item => ({item, original: item.asisId ? layers.asis.find(asis => asis.id === item.asisId) || null : null})),
+      ...goneAsisItems(layers.asis, layers.tobe).map(item => ({item, gone: true}))
+    ]
+    : layers.asis.map(item => ({item}));
+  let body = '';
+  for (const {item, original, gone} of entries) {
+    const state = !locked ? '' : gone ? 'gone' : diffDefItem(tab, original, item).state;
+    const compareWith = locked && !gone ? original : null;
+    let content = reportInfoTableHtml(infoFields, item.info, compareWith ? compareWith.info || {} : null);
     for (const [key, gridLabel] of grids) {
-      const rows = item.grids[key] || [];
-      if (!rows.length) continue;
-      const columns = GRID_COLUMNS[`${tab}.${key}`].cols;
-      html += `<div class="cap">${escapeHtml(gridLabel)}</div>` + reportTableHtml(columns, rows.map(row => columns.map((_, i) => row[i] || '')));
+      const table = reportGridTableHtml(GRID_COLUMNS[`${tab}.${key}`].cols, gridValueOf(item, key), compareWith ? gridValueOf(compareWith, key) : null);
+      if (table) content += `<div class="cap">${escapeHtml(gridLabel)}</div>` + table;
     }
+    if (!content && !state) continue;
+    const stateNote = state && state !== 'same' ? ` <span class="note">${ITEM_STATE_LABELS[state]}${gone ? ' (원본에만 있음)' : ''}</span>` : '';
+    body += `<h4>${escapeHtml(item.title || UNNAMED_DEF_TITLE)}${stateNote}</h4>` + content;
   }
-  return html;
+  return body ? section(label + (locked ? ' 정의 (원본 대비)' : ' 정의 (원본)')) + body : '';
 }
 
 /**

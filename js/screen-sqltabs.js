@@ -1,15 +1,17 @@
 /* ==========================================================================
    screen-sqltabs.js — 알약 탭 · SQL 탭 · 항목 이력
-     - 알약 탭(공통): 기존 SQL · 신규 SQL · 서비스 · 오브젝트 · 공통코드관리 탭 안에서 항목 하나 = 탭 하나
-         탭 줄 id = 'asis' | 'tobe' (SQL, 이 파일) | 'service' | 'object' | 'code' (정의서, screen-defs.js)
+     - 알약 탭(공통): SQL · 서비스 · 오브젝트 · 공통코드관리 탭 안에서 항목 하나 = 탭 하나
+         탭 줄 id = 'asis' | 'tobe' (SQL 원본 · 신규, 이 파일) | 'service' | 'object' | 'code' (정의서, screen-defs.js)
          탭이 넘치면: 스크롤바는 숨기고(UI 가 틀어지지 않게) 양 끝에 ‹ › 단추 + 가려진 쪽을 흐리게 표시.
          마우스 휠(가로로 움직임) · 탭 줄을 끌기 · [▾ 전체] 목록으로도 이동합니다.
+         신규 단계에서는 탭마다 원본 대비 상태(변경 · 신규 · 삭제됨)와 탭 줄 오른쪽 요약을 붙입니다 (screen-changes.js)
+         '삭제됨' 탭 = 원본에만 있는 항목 (id 앞에 GONE_TAB_PREFIX, × 없음, 누르면 읽기 전용 보기)
      - SQL 탭: 고른 탭의 SQL 블록만 보이고 나머지는 숨깁니다.
        블록은 모두 화면에 그대로 있으므로 등록·비교 탭·보고서는 예전처럼 화면 순서대로 읽습니다.
-     - [+ SQL 추가] 창: 이름·SQL(필수) · 비교할 기존 SQL(신규만) · 이력(선택)
+     - [+ SQL 추가] 창: 이름·SQL(필수) · 비교할 원본 SQL(신규만) · 이력(선택)
        창은 처음 추가할 때만 쓰고, 고치는 것은 탭 본문에서 합니다.
      - 항목 이력(공통): item.log = [{at, by, text}]
-         SQL  → meta.sqlBlocks[kind][].log      정의서 → <탭>/items.json 의 [].log
+         SQL  → meta.sqlBlocks[kind][].log      정의서 → <dir>/asis.json · tobe.json 의 [].log
          이미 등록된 항목  → [이력 저장] 하면 바로 파일에 저장
          아직 등록 전인 항목 → 화면에만 남았다가 그 항목을 등록할 때 함께 저장
    ========================================================================== */
@@ -27,15 +29,26 @@ const pillTabsBarHtml = barId => `<div class="sqltabs"><div class="pilltabs-scro
   + `<button type="button" class="pilltabs-arrow" data-pill-scroll="${barId}" data-dir="-1" aria-label="왼쪽 탭 보기" hidden>‹</button>`
   + `<div class="sqltabs-list" id="tabs-${barId}" role="tablist" aria-label="목록"></div>`
   + `<button type="button" class="pilltabs-arrow" data-pill-scroll="${barId}" data-dir="1" aria-label="오른쪽 탭 보기" hidden>›</button></div>`
+  + `<span class="tabs-sum" id="tabsSum-${barId}"></span>`
   + `<div class="sqltabs-tools" id="tabsTools-${barId}"></div></div>`
   + `<div class="sqltabs-empty" id="tabsEmpty-${barId}" hidden></div>`;
 
-/** 탭 하나: [● 이름] [×] */
-const pillTabHtml = (barId, entry, removable) => `<div class="sqltab" data-tab-bid="${entry.id}" title="${escapeHtml(entry.title)}">`
-  + `<button type="button" class="sqltab-b" role="tab" aria-selected="false" data-pill-tab="${barId}" data-bid="${entry.id}">`
-  + `<i class="sqltab-dot" title="등록하지 않은 변경이 있습니다"></i><span class="sqltab-t">${escapeHtml(entry.title)}</span></button>`
-  + (removable ? `<button type="button" class="sqltab-x" data-pill-del="${barId}" data-bid="${entry.id}" title="삭제" aria-label="${escapeHtml(entry.title)} 삭제">×</button>` : '')
-  + `</div>`;
+/** 원본 대비 상태 글 (탭 이름 뒤) — 동일이면 비움 */
+const pillStateText = state => (state && state !== 'same' ? ITEM_STATE_LABELS[state] : '');
+
+/**
+ * 탭 하나: [● 이름 상태] [×]
+ * @param {{id: string, title: string, state?: string}} entry state: 'gone' 이면 삭제된 원본 항목 탭(× 없음)
+ */
+function pillTabHtml(barId, entry, removable) {
+  const gone = entry.state === 'gone';
+  return `<div class="sqltab${gone ? ' gone' : ''}" data-tab-bid="${escapeHtml(entry.id)}" data-st="${entry.state || ''}" title="${escapeHtml(entry.title)}">`
+    + `<button type="button" class="sqltab-b" role="tab" aria-selected="false" data-pill-tab="${barId}" data-bid="${escapeHtml(entry.id)}">`
+    + `<i class="sqltab-dot" title="등록하지 않은 변경이 있습니다"></i><span class="sqltab-t">${escapeHtml(entry.title)}</span>`
+    + `<em class="sqltab-st">${pillStateText(entry.state)}</em></button>`
+    + (removable && !gone ? `<button type="button" class="sqltab-x" data-pill-del="${barId}" data-bid="${escapeHtml(entry.id)}" title="삭제" aria-label="${escapeHtml(entry.title)} 삭제">×</button>` : '')
+    + `</div>`;
+}
 
 /**
  * 탭 줄 그리기
@@ -77,16 +90,23 @@ function scrollPillTabIntoView(barId, id) {
   if (tab) tab.scrollIntoView({block: 'nearest', inline: 'nearest'});
 }
 
-/** 탭 이름과 ● 표시를 지금 상태로 (이름이 바뀔 때만 다시 넣음) */
-function markPillTab(barId, id, title, dirty) {
+/**
+ * 탭 이름 · ● · 원본 대비 상태를 지금 상태로 (글이 바뀔 때만 다시 넣음)
+ * @param {string} [state] same · changed · new (신규 단계에서만, 원본 단계는 '')
+ */
+function markPillTab(barId, id, title, dirty, state = '') {
   const tab = $(`#tabs-${barId} [data-tab-bid="${id}"]`);
   if (!tab) return;
   const label = tab.querySelector('.sqltab-t');
-  if (label.textContent !== title) {
+  const stateLabel = tab.querySelector('.sqltab-st');
+  const stateText = pillStateText(state);
+  if (label.textContent !== title || stateLabel.textContent !== stateText) {
     label.textContent = title;
+    stateLabel.textContent = stateText;
     tab.title = title;
-    updatePillTabOverflow(barId);   // 이름 길이가 바뀌면 넘침도 바뀔 수 있음
+    updatePillTabOverflow(barId);   // 글 길이가 바뀌면 넘침도 바뀔 수 있음
   }
+  tab.dataset.st = state;
   tab.classList.toggle('dirty', dirty);
 }
 
@@ -195,23 +215,34 @@ const addPillTab = barId => (isSqlTabBar(barId) ? addSqlBlock(barId) : addDefIte
 
 /* ======================= SQL 탭 ======================= */
 
+/** SQL 탭 줄의 블록 요소들 (신규 쪽은 삭제된 원본 블록 보기 #gone-tobe 포함) */
+const sqlTabElements = kind => $$(`#blocks-${kind} > .blk${kind === 'tobe' ? ', #gone-tobe > .blk' : ''}`);
+
 /** 고른 탭이 없거나 지워졌으면 첫 탭을 고름 */
 function ensureActiveSqlTab(kind) {
   const screen = app.screen;
-  const blockIds = $$(`#blocks-${kind} .blk`).map(element => element.dataset.id);
-  if (!blockIds.includes(screen.activeBlock[kind])) screen.activeBlock[kind] = blockIds[0] || '';
+  const ids = sqlTabElements(kind).map(element => element.dataset.id);
+  if (!ids.includes(screen.activeBlock[kind])) screen.activeBlock[kind] = ids[0] || '';
 }
 
-/** SQL 탭 줄 다시 그리기 — 블록을 추가·삭제했을 때, 잠그거나 풀었을 때 부름. 잠긴 기존 SQL 은 × 와 [+ SQL 추가] 없음 */
+/**
+ * SQL 탭 줄 다시 그리기 — 블록을 추가·삭제했을 때, 비교할 원본을 바꿨을 때 부름
+ * 숨겨 둔 쪽(원본 단계의 신규 · 신규 단계의 원본)도 그려 두지만 보이지 않습니다.
+ * 신규 단계의 신규 쪽에는 삭제된 원본 블록 탭이 붙습니다.
+ */
 function renderSqlTabs(kind) {
   const screen = app.screen;
+  const showGone = kind === 'tobe' && isLocked();
+  if (showGone) renderGoneSqlBlocks();   // 탭 줄보다 먼저 (고른 탭 확인에 씀)
   ensureActiveSqlTab(kind);
-  const locked = kind === 'asis' && !!screen.meta.asisLocked;
-  renderPillTabs(kind, readBlockInputs(kind), {
+  const entries = readBlockInputs(kind).map(({id, title}) => ({id, title}));
+  if (showGone) entries.push(...goneSqlBlocks().map(block => goneTabEntry(block.id, block.title)));
+  const readOnly = kind === 'asis' && isLocked();
+  renderPillTabs(kind, entries, {
     activeId: screen.activeBlock[kind],
-    removable: !locked,
-    addLabel: locked ? '' : '+ SQL 추가',
-    emptyText: locked ? '등록된 기존 SQL이 없습니다.' : `아직 ${kind === 'asis' ? '기존' : '신규'} SQL이 없습니다. 오른쪽 위 [+ SQL 추가]로 넣어 주세요.`
+    removable: !readOnly,
+    addLabel: readOnly ? '' : '+ SQL 추가',
+    emptyText: `아직 ${LAYER_LABELS[kind]} SQL이 없습니다. 오른쪽 위 [+ SQL 추가]로 넣어 주세요.`
   });
   showActiveSqlBlock(kind);
   refreshSqlTabMarks(kind);
@@ -220,7 +251,7 @@ function renderSqlTabs(kind) {
 /** 고른 탭의 블록만 보이게 하고 탭 모양을 맞춤 */
 function showActiveSqlBlock(kind) {
   const activeId = app.screen.activeBlock[kind];
-  $$(`#blocks-${kind} .blk`).forEach(element => element.classList.toggle('on', element.dataset.id === activeId));
+  sqlTabElements(kind).forEach(element => element.classList.toggle('on', element.dataset.id === activeId));
   markActivePillTab(kind, activeId);
 }
 
@@ -235,6 +266,7 @@ function activateSqlTab(kind, blockId) {
   }
   if (kind === 'tobe') markChangedLines(blockId);
   scrollPillTabIntoView(kind, blockId);
+  scheduleChangeMarks();
   renderMiniBar();
 }
 
@@ -255,11 +287,19 @@ function isSqlBlockChanged(kind, blockId, savedRows) {
   return [editorId(kind, blockId), editorId('rollback', blockId)].some(isEditorChanged);
 }
 
-/** SQL 탭 이름(본문 제목칸 값)과 ● 표시를 지금 상태로 — 입력할 때마다 불림(refreshIndicators) */
+/** SQL 탭 이름(본문 제목칸 값) · ● · 원본 대비 상태(신규 단계의 신규 쪽)를 지금 상태로 — 입력할 때마다 불림(refreshIndicators) */
 function refreshSqlTabMarks(kind) {
   if (!$('#tabs-' + kind)) return;
   const savedRows = JSON.parse(app.screen.savedBlockOrder[kind] || '[]');
-  for (const input of readBlockInputs(kind)) markPillTab(kind, input.id, input.title, isSqlBlockChanged(kind, input.id, savedRows));
+  const withState = kind === 'tobe' && isLocked();
+  const asisInputs = withState ? readBlockInputs('asis') : [];
+  const states = [];
+  readBlockInputs(kind).forEach((input, order) => {
+    const state = withState ? sqlBlockStateOf(input, order, asisInputs) : '';
+    states.push(state);
+    markPillTab(kind, input.id, input.title, isSqlBlockChanged(kind, input.id, savedRows), state);
+  });
+  if (withState) renderTabStateSummary(kind, [...states, ...goneSqlBlocks().map(() => 'gone')]);
 }
 
 /* ======================= SQL 추가 창 ======================= */
@@ -273,7 +313,7 @@ function getSqlAddEditor() {
   return sqlAddEditor;
 }
 
-/** '비교할 기존 SQL' 선택 항목: 기존 SQL 목록 + 없음(신규 쿼리, 처음 선택) */
+/** '비교할 원본 SQL' 선택 항목: 원본 SQL 목록 + 없음(신규 쿼리, 처음 선택) */
 function pairChoicesHtml() {
   const asisOptions = readBlockInputs('asis').map((block, i) => `<option value="${escapeHtml(block.id)}">${i + 1}. ${escapeHtml(block.title)}</option>`);
   return `<option value="${PAIR_SELECT_NONE}" selected>없음 (신규 쿼리)</option>` + asisOptions.join('');
@@ -288,7 +328,7 @@ function askNewSqlBlock(kind) {
   return new Promise(resolve => {
     const modal = $('#sqlAddModal'), nameInput = $('#saName'), logInput = $('#saLog'), error = $('#saErr');
     const editor = getSqlAddEditor();
-    $('#saTitle').textContent = kind === 'asis' ? '기존 SQL 추가' : '신규 SQL 추가';
+    $('#saTitle').textContent = `${LAYER_LABELS[kind]} SQL 추가`;
     nameInput.value = '';
     logInput.value = '';
     editor.setOption('fontFamily', codeFontStack);   // 글꼴 설정을 바꿨을 수 있음
@@ -400,7 +440,7 @@ function findLogTarget(scope, kind, itemId) {
   return {
     item: (screen.defItems[kind] || []).find(item => item.id === itemId),
     savedItem: (screen.savedDefItems[kind] || []).find(item => item.id === itemId),
-    persist: () => writeJson(screen.dir, DEF_TABS[kind].file, screen.savedDefItems[kind])
+    persist: () => writeJson(screen.dir, defLayerFile(kind, currentLayer()), screen.savedDefItems[kind].map(storedDefItem))
   };
 }
 

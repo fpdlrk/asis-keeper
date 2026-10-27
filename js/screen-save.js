@@ -1,16 +1,11 @@
 /* ==========================================================================
    screen-save.js — 등록과 상태
-     - 기존 내용 등록 후 잠그기 (해시를 함께 저장 → 나중에 원본이 바뀌었는지 확인)
      - 저장 바의 [등록] / [변경 취소], Ctrl+S
+         등록은 지금 고치는 쪽에 저장: 원본 단계 → 원본(임시 저장, 잠그기 전까지 고칠 수 있음) / 신규 단계 → 신규
+         잠그기 · 잠금 풀기 · 원본 확인은 screen-lock.js
      - 상태 변경 (바로 저장 + 이력 기록)
-     - 원본 무결성 확인 표시
      - 화면 안의 버튼 이벤트 연결 (initScreen)
    ========================================================================== */
-
-const LOCKED_SAVE_MESSAGE = '기존 내용은 잠겨 있어 저장할 수 없습니다. 수정은 ‘신규 SQL’ 탭에서 하세요.';
-
-/* 잠금을 풀 때 받는 사유의 최소 길이 (한두 글자로 넘기지 못하게) */
-const MIN_UNLOCK_REASON_LENGTH = 5;
 
 /** meta.json 저장 */
 const saveMeta = () => writeJson(app.screen.dir, 'meta.json', app.screen.meta);
@@ -18,186 +13,7 @@ const saveMeta = () => writeJson(app.screen.dir, 'meta.json', app.screen.meta);
 /** 이력에 남길 사람: 화면 위 '작업자' 칸 (등록 전 입력값 포함), 비었으면 저장된 작업자 */
 const currentWorkerName = () => ($('#worker') ? $('#worker').value.trim() : '') || app.screen.meta.worker || '';
 
-/* ======================= 기존 내용 등록 후 잠그기 ======================= */
-
-/**
- * 잠글 때 저장할 해시 모음 — 등록한 SQL 블록 파일 + asis/files 아래 모든 파일
- * 저장이 끝난 파일에서 다시 읽어 계산하므로, 잠금을 풀고 고친 뒤 다시 잠글 때도 지금 내용이 기준이 됩니다.
- * @param {FileSystemDirectoryHandle} dir 화면 폴더
- * @param {{file: string}[]} blockList    등록한 기존 SQL 블록 목록
- * @param {string[]} savedFilePaths       asis/files 기준 상대 경로 목록
- * @returns {Promise<object>} {화면 폴더 기준 경로: 해시}
- */
-async function hashAsisFiles(dir, blockList, savedFilePaths) {
-  const hashes = {};
-  const paths = [...blockList.map(block => block.file), ...savedFilePaths.map(path => FILE_DIRS.asis + '/' + path)];
-  for (const path of paths) {
-    const file = await readFile(dir, path);
-    if (file) hashes[path] = await sha256(file);
-  }
-  return hashes;
-}
-
-/** [기존 내용 등록 후 잠그기] / [수정 내용 등록 후 다시 잠그기] — 되돌릴 수 없으므로 확인을 받음 */
-async function registerAsis() {
-  const screen = app.screen;
-  const reopened = wasAsisUnlocked(screen.meta);   // 잠금을 푼 뒤 다시 잠그는 경우
-  const filledBlocks = readBlockInputs('asis').filter(block => block.sql.trim());   // 빈 블록은 등록하지 않음
-  // 다시 잠글 때는 블록을 다 지우고 파일만 남겨 둘 수도 있어, 이미 등록된 파일이 있으면 통과시킵니다.
-  if (!filledBlocks.length && !screen.pendingFiles.asis.length && !screen.savedFiles.asis.length) {
-    return toast('등록할 기존 SQL 또는 파일이 없습니다.');
-  }
-  const pathError = validatePendingPaths('asis');
-  if (pathError) return toast(pathError);
-  const ok = await askConfirm({
-    title: reopened ? '수정 내용 등록 후 다시 잠그기' : '기존 내용 등록 후 잠그기',
-    desc: reopened
-      ? '다시 잠그면 지금 내용이 새 원본 기준이 되고, 수정·삭제할 수 없습니다.\n잠금 해제 이력은 그대로 남습니다.\n내용을 확인하셨나요?'
-      : '등록하면 기존(ASIS) 내용은 수정·삭제할 수 없습니다.\n내용을 확인하셨나요?',
-    okText: reopened ? '다시 잠그기' : '등록 후 잠그기'
-  });
-  if (!ok) return;
-
-  try {
-    await withBusy('기존 내용을 등록하고 잠그는 중…', async () => {
-      const blockList = [];
-      // 1) SQL 블록 저장
-      for (const input of filledBlocks) {
-        const block = findSqlBlock('asis', input.id);
-        await writeFile(screen.dir, block.file, new Blob([input.sql], {type: 'text/plain'}));
-        block.title = input.title;
-        Object.assign(block, readSqlDefinition('asis', input.element));
-        blockList.push({id: block.id, title: block.title, file: block.file, ...sqlDefinitionOf(block), ...blockLogOf(block)});
-        screen.savedValues[editorId('asis', block.id)] = input.sql;
-      }
-      // 2) 잠금을 푼 뒤 삭제한 블록의 파일 지우기
-      for (const block of screen.removedAsisBlocks) await removeFileQuietly(screen.dir, block.file);
-      screen.removedAsisBlocks = [];
-      // 3) 기존 파일 저장
-      for (const {file, path} of screen.pendingFiles.asis) await writeFile(screen.dir, FILE_DIRS.asis + '/' + path, file);
-      screen.pendingFiles.asis = [];
-      screen.savedFiles.asis = await listFilesDeep(screen.dir, FILE_DIRS.asis);
-      // 4) 해시는 저장이 끝난 뒤 파일에서 다시 계산 (다시 잠글 때 기준을 지금 내용으로 갱신)
-      screen.meta.hashes = await hashAsisFiles(screen.dir, blockList, screen.savedFiles.asis);
-      // 5) 잠금 표시 저장. 다시 잠근 경우 마지막 해제 이력에 '다시 잠근 시각'을 적음
-      screen.meta.sqlBlocks = {...(screen.meta.sqlBlocks || {}), asis: blockList};
-      screen.meta.asisLocked = true;
-      if (!screen.meta.asisSavedAt) screen.meta.asisSavedAt = new Date().toLocaleString('ko-KR');   // 최초 등록 시각은 그대로 보존
-      closeLastUnlockEntry(screen.meta);
-      await saveMeta();
-      // 6) 등록하지 않은 빈 블록은 화면에서 지움
-      for (const input of readBlockInputs('asis')) {
-        if (filledBlocks.some(filled => filled.id === input.id)) continue;
-        destroyEditor(editorId('asis', input.id));
-        input.element.remove();
-        screen.blocks.asis = screen.blocks.asis.filter(block => block.id !== input.id);
-      }
-      screen.savedBlockOrder.asis = blockOrderSignature('asis');
-      showAsisAsLocked();
-    });
-    toast(reopened ? '수정 내용을 등록하고 다시 잠갔습니다.' : '기존 내용을 등록하고 잠갔습니다.');
-  } catch (error) {
-    toastError('저장 실패', error);
-  }
-}
-
-/* ======================= 잠금 풀기 ======================= */
-
-/** 아직 열려 있는(다시 잠그지 않은) 해제 이력에 다시 잠근 시각을 적음 */
-function closeLastUnlockEntry(meta) {
-  const log = meta.asisUnlockLog || [];
-  if (!log.length || lastOf(log).relockedAt) return;
-  meta.asisUnlockLog = [...log.slice(0, -1), {...lastOf(log), relockedAt: new Date().toISOString()}];
-}
-
-/**
- * [잠금 풀기] — 사유를 반드시 받아 이력에 남기고, 기존 SQL 탭을 다시 편집할 수 있게 함
- * 원본 보관이 목적인 도구이므로 사유 없이는 풀 수 없게 막고, 남긴 사유는 지울 수 없습니다.
- */
-async function unlockAsis() {
-  const screen = app.screen;
-  if (!screen || !screen.meta.asisLocked) return;
-  const answer = await askText({
-    title: '기존 내용 잠금 풀기',
-    desc: '기존(ASIS)은 변경 전 상태를 그대로 남겨 두기 위해 잠가 둡니다.\n잘못 등록한 내용을 바로잡는 경우에만 잠금을 풀어 주세요.',
-    label: '잠금을 푸는 사유 (필수)',
-    placeholder: '예: 등록 당시 누락된 WHERE 절 보완 (티켓 A-123)',
-    hint: '적으신 사유는 이 화면의 ‘잠금 해제 이력’에 남고, 지울 수 없습니다.',
-    okText: '잠금 풀기',
-    validate: value => {
-      if (!value) return '잠금을 푸는 사유를 입력해 주세요.';
-      if (value.length < MIN_UNLOCK_REASON_LENGTH) return `사유를 ${MIN_UNLOCK_REASON_LENGTH}자 이상 적어 주세요.`;
-      return '';
-    }
-  });
-  if (!answer) return;
-
-  try {
-    await withBusy('잠금을 푸는 중…', async () => {
-      screen.meta.asisUnlockLog = [...(screen.meta.asisUnlockLog || []),
-        {at: new Date().toISOString(), by: currentWorkerName(), reason: answer.value, relockedAt: ''}];
-      screen.meta.asisLocked = false;
-      await saveMeta();
-      showAsisAsUnlocked();
-    });
-    toast('잠금을 풀었습니다. 수정한 뒤 다시 등록해 잠가 주세요.');
-  } catch (error) {
-    toastError('저장 실패', error);
-  }
-}
-
-/** 기존 SQL 편집기 전체에 읽기 전용 여부를 적용 (커서·활성 줄 표시까지 createEditor 와 같게 맞춤) */
-function setAsisEditorsReadOnly(readOnly) {
-  for (const [id, editor] of Object.entries(app.screen.editors)) {
-    if (!id.startsWith(EDITOR_PREFIX.asis)) continue;
-    editor.setReadOnly(readOnly);
-    editor.setHighlightActiveLine(!readOnly);
-    editor.setOption('highlightGutterLine', !readOnly);
-    editor.renderer.$cursorLayer.element.style.display = readOnly ? 'none' : '';
-    if (!readOnly) watchSqlPaste(editor, id);   // 잠그기 전처럼 붙여넣기 → 블록 분리 제안
-  }
-}
-
-/** 화면을 다시 그리지 않고 기존 SQL 탭만 잠긴 모양으로 바꿈 (다른 탭에서 입력 중인 내용을 지키기 위해) */
-function showAsisAsLocked() {
-  const screen = app.screen;
-  setAsisEditorsReadOnly(true);
-  setAsisDefinitionReadOnly(true);
-  $$('#blocks-asis .bt').forEach(input => { input.disabled = true; });
-  // ⋯ 메뉴(삭제)는 잠그면 쓸 수 없으므로 지움 (복사는 편집기·제목칸의 복사 아이콘으로)
-  $$('#blocks-asis [data-menu="asis"]').forEach(button => button.remove());
-  $('#blocks-asis').classList.add('locked');
-  renderSqlTabs('asis');   // 탭의 삭제(×)·[+ SQL 추가] 단추가 사라짐
-  $('#asisBanner').className = 'banner lock';
-  $('#asisBanner').innerHTML = lockedBannerHtml(screen.meta);
-  $('#asisUnlockLog').innerHTML = unlockLogBannerHtml(screen.meta);   // '다시 잠금' 시각 반영
-  verifyIntegrity();
-  refreshPairedBlocks();
-  refreshIndicators();
-}
-
-/** 화면을 다시 그리지 않고 기존 SQL 탭만 편집할 수 있는 모양으로 되돌림 (showAsisAsLocked 의 반대) */
-function showAsisAsUnlocked() {
-  const screen = app.screen;
-  setAsisEditorsReadOnly(false);
-  setAsisDefinitionReadOnly(false);
-  $$('#blocks-asis .bt').forEach(input => { input.disabled = false; });
-  // ⋯ 메뉴(삭제)를 블록 머리 끝에 다시 붙임
-  $$('#blocks-asis .blk').forEach(element => {
-    if (!element.querySelector('[data-menu="asis"]')) element.querySelector('.blk-h').insertAdjacentHTML('beforeend', asisBlockMenuHtml(element.dataset.id));
-  });
-  $('#blocks-asis').classList.remove('locked');
-  renderSqlTabs('asis');   // 탭의 삭제(×)·[+ SQL 추가] 단추를 다시 보여 줌
-  $('#asisBanner').className = 'banner info';
-  $('#asisBanner').innerHTML = unlockedBannerHtml(screen.meta);
-  $('#asisUnlockLog').innerHTML = unlockLogBannerHtml(screen.meta);
-  verifyIntegrity();
-  refreshPairedBlocks();
-  refreshIndicators();
-  showTab('asis');   // 다른 탭에서 풀었어도 수정할 곳을 바로 보여 줌
-}
-
-/* ======================= 저장 바의 [등록] ======================= */
+/* ======================= 영역별 저장 ======================= */
 
 /** 글 입력란 하나 저장 (비어 있고 원래도 없던 파일은 만들지 않음) */
 async function saveTextField(fieldId) {
@@ -207,7 +23,6 @@ async function saveTextField(fieldId) {
   screen.savedValues[fieldId] = value;
 }
 
-
 /** 등록 대기 파일 저장 */
 async function savePendingFiles(kind) {
   const screen = app.screen;
@@ -215,6 +30,25 @@ async function savePendingFiles(kind) {
   screen.pendingFiles[kind] = [];
   screen.savedFiles[kind] = await listFilesDeep(screen.dir, FILE_DIRS[kind]);
   renderFileList(kind);
+}
+
+/** 원본 SQL 블록 저장 (원본 단계의 [등록] · 잠그기). 지운 블록의 파일도 지움 */
+async function saveAsisBlocks() {
+  const screen = app.screen;
+  const blockList = [];
+  for (const input of readBlockInputs('asis')) {
+    const block = findSqlBlock('asis', input.id);
+    await writeFile(screen.dir, block.file, input.sql);
+    block.title = input.title;
+    Object.assign(block, readSqlDefinition('asis', input.element));
+    blockList.push({id: block.id, title: block.title, file: block.file, ...sqlDefinitionOf(block), ...blockLogOf(block)});
+    screen.savedValues[editorId('asis', block.id)] = input.sql;
+  }
+  for (const block of screen.removedAsisBlocks) await removeFileQuietly(screen.dir, block.file);
+  screen.removedAsisBlocks = [];
+  screen.meta.sqlBlocks = {...(screen.meta.sqlBlocks || {}), asis: blockList};
+  await saveMeta();
+  screen.savedBlockOrder.asis = blockOrderSignature('asis');
 }
 
 /** 신규 SQL 블록 저장 — 덮어쓰기 전 내용은 tobe/history 에 남김. 삭제한 블록의 파일도 지움 */
@@ -257,13 +91,18 @@ async function saveTobeBlocks() {
   screen.hasSavedTobe = hasSavedTobeSql();
 }
 
-/** 영역 하나 등록 */
+/** 영역 하나 등록 — SQL · 정의서는 지금 고치는 쪽(원본/신규)에 저장 */
 async function saveSection(section) {
   const screen = app.screen;
-  if (section === 'tobe') {
-    await saveTobeBlocks();
-    await savePendingFiles('tobe');
-    await renderTobeHistory();
+  if (section === 'sql') {
+    if (isLocked()) {
+      await saveTobeBlocks();
+      await savePendingFiles('tobe');
+      await renderTobeHistory();
+    } else {
+      await saveAsisBlocks();
+      await savePendingFiles('asis');
+    }
   } else if (section === 'attach') {
     await savePendingFiles('attach');
   } else if (section === 'common') {
@@ -275,31 +114,41 @@ async function saveSection(section) {
   }
 }
 
-/** 저장 바 [등록]: 바뀐 영역을 모두 등록 (기존 내용은 제외 — 따로 잠그기로 등록) */
-async function saveAllChanges() {
-  if (!app.screen) return;
-  const sections = SAVE_SECTIONS.map(([section]) => section).filter(isDirty);
-  if (!sections.length) {
-    return toast(isDirty('asis') ? '기존 내용은 ‘기존 SQL’ 탭의 ‘등록 후 잠그기’로 등록합니다.' : '등록할 변경이 없습니다.');
-  }
-  for (const kind of ['tobe', 'attach']) {
-    if (!sections.includes(kind)) continue;
-    const pathError = validatePendingPaths(kind);
-    if (pathError) {
-      showTab(kind);
-      return toast(pathError);
-    }
+/** 여러 영역 차례로 등록 (기다림 표시는 부르는 쪽에서) */
+async function saveSections(sections) {
+  for (const section of sections) await saveSection(section);
+}
+
+/** 등록 대기 파일의 저장 경로 확인 (지금 고치는 쪽 파일 · 첨부). 문제가 없으면 '' */
+const pendingPathError = () => validatePendingPaths(currentLayer()) || validatePendingPaths('attach');
+
+/**
+ * 등록하지 않은 변경이 있는 영역을 모두 등록 (저장 바 [등록] · 잠금 풀기 전)
+ * @returns {Promise<boolean>} 다 등록했으면 true
+ */
+async function saveDirtySections() {
+  const pathError = pendingPathError();
+  if (pathError) {
+    showTab(validatePendingPaths('attach') ? 'attach' : 'sql');
+    toast(pathError);
+    return false;
   }
   try {
-    await withBusy('등록하는 중…', async () => {
-      for (const section of sections) await saveSection(section);
-    });
-    toast('등록했습니다.');
+    await withBusy('등록하는 중…', () => saveSections(SAVE_SECTIONS.map(([section]) => section).filter(isDirty)));
+    return true;
   } catch (error) {
     toastError('저장 실패', error);
+    return false;
   } finally {
     refreshIndicators();
   }
+}
+
+/** 저장 바 [등록] (Ctrl+S): 바뀐 영역을 모두 등록 */
+async function saveAllChanges() {
+  if (!app.screen) return;
+  if (!hasUnsavedChanges()) return toast('등록할 변경이 없습니다.');
+  if (await saveDirtySections()) toast(isLocked() ? '등록했습니다.' : '원본을 등록했습니다. 다 넣었으면 위쪽 [원본 등록 후 잠그기]로 잠가 주세요.');
 }
 
 /** 저장 바 [변경 취소]: 등록하지 않은 변경을 버리고 다시 불러옴 */
@@ -311,7 +160,7 @@ async function discardChanges() {
   toast('변경을 취소했습니다.');
 }
 
-/* ======================= 상태 · 무결성 ======================= */
+/* ======================= 상태 ======================= */
 
 /** 상태 변경: 바로 저장하고, 바꾼 사람(작업자)과 함께 이력에 남김 */
 async function changeStatus(statusIndex) {
@@ -336,30 +185,6 @@ async function changeStatus(statusIndex) {
   }
 }
 
-/** 원본 무결성 표시: 잠긴 기존 파일이 등록 때와 같은지 (상단 작업 정보 줄) */
-async function verifyIntegrity() {
-  const badge = $('#integrity');
-  if (!badge) return;
-  const screen = app.screen;
-  if (!screen.meta.asisLocked) {
-    // 잠금을 푼 상태와 아직 등록하지 않은 상태를 구분해 보여 줌
-    badge.innerHTML = wasAsisUnlocked(screen.meta)
-      ? `<span class="tag warn">${ICON.unlock}잠금 해제 중</span>`
-      : '<span class="tag">ASIS 미등록</span>';
-    $('#warn').innerHTML = '';
-    return;
-  }
-  const changed = await findChangedFiles(screen.dir, screen.meta.hashes);
-  if (screen !== app.screen) return;   // 확인하는 사이 다른 화면으로 이동함
-  badge.innerHTML = changed.length
-    ? `<span class="tag bad">${ICON.warn}원본 변경 감지</span>`
-    : `<span class="tag ok">${ICON.check}ASIS 원본 일치</span>`;
-  $('#warn').innerHTML = changed.length
-    ? `<div class="banner bad">${ICON.warn}<div><b>저장 당시와 다른 원본 파일이 있습니다.</b> 이 원본으로 복원하기 전에 확인하세요.`
-      + `<ul>${changed.map(item => `<li><code>${escapeHtml(item.path + ' (' + item.reason + ')')}</code></li>`).join('')}</ul></div></div>`
-    : '';
-}
-
 /* ======================= 이벤트 연결 ======================= */
 
 /**
@@ -373,12 +198,12 @@ function handleScreenClick(e) {
 
   if (button.id === 'btnSaveAll') saveAllChanges();
   else if (button.id === 'btnDiscard') discardChanges();
-  else if (button.id === 'saveAsis') registerAsis();
+  else if (button.id === 'saveAsis') lockOriginal();
   else if (button.id === 'unlockAsis') unlockAsis();
   else if (data.add) addGridRow(data.add);                       // 표 [+ 행 추가]
   else if (data.del !== undefined) deleteGridRow(button);        // 표 줄 ✕
   else if (data.copyEd) copyEditorText(data.copyEd);             // 편집기 오른쪽 위 복사 아이콘
-  else if (data.copyInput !== undefined) copyInputText(button);   // 입력칸 오른쪽 끝 복사 아이콘 (SQL 제목 · SQL 정의)
+  else if (data.copyInput !== undefined) copyInputText(button);   // 입력칸 오른쪽 끝 복사 아이콘 (SQL 제목 · 정의 칸)
   else if (data.miniTab) showTab(data.miniTab);                     // 요약 줄의 화면 탭
   else if (data.miniTop !== undefined) scrollScreenToTop();         // 요약 줄의 SQL/항목 이름 → 맨 위로
   else if (data.pillScroll) scrollPillTabs(data.pillScroll, Number(data.dir));   // 알약 탭 줄 ‹ ›
@@ -386,13 +211,17 @@ function handleScreenClick(e) {
   else if (data.pillDel) deletePillTab(data.pillDel, data.bid);     // 알약 탭 ×
   else if (data.pillAll) showAllPillTabs(data.pillAll, button);     // 알약 탭 [▾ 전체]
   else if (data.pillAdd) addPillTab(data.pillAdd);                  // [+ SQL 추가] · [+ 서비스 추가] …
+  else if (data.reviveSql) reviveSqlBlock(data.reviveSql);          // 삭제된 원본 SQL [되살리기]
+  else if (data.reviveDef) reviveDefItem(data.reviveDef, data.bid); // 삭제된 원본 정의서 항목 [되살리기]
+  else if (data.reviveRow) reviveGridRow(data.reviveRow, data.rid); // 삭제된 줄 [되살리기]
+  else if (data.gotoTab) goToItem(data.gotoTab, data.bid);          // 비교 탭의 항목 이름 → 그 탭의 그 항목
   else if (data.logSave) saveItemLog(data.logScope, data.kind, data.logSave);   // 항목 이력 [이력 저장]
-  else if (data.from) importAsisSql(data.from);                  // [기존 SQL 가져오기]
+  else if (data.from) importAsisSql(data.from);                  // [원본 SQL 가져오기]
   else if (data.hist) loadHistoryVersion(data.hist);             // 변경 이력 [편집기로 불러오기]
   else if (data.pickdir) pickFolderFiles(data.pickdir);          // [폴더 선택]
   else if (data.menu === 'tobe') {
     showMenuBelow(button, [
-      ['기존과 비교 (창으로 보기)', () => openSqlDiffWindow(data.bid), '', MENU_ICON.compare],
+      ['원본과 비교 (창으로 보기)', () => openSqlDiffWindow(data.bid), '', MENU_ICON.compare],
       ['블록 삭제', () => deleteSqlBlock('tobe', data.bid), 'danger', MENU_ICON.trash]
     ]);
   } else if (data.menu === 'asis') {
@@ -402,16 +231,11 @@ function handleScreenClick(e) {
   }
 }
 
-/** Ctrl+S: 기존 SQL 탭에서 잠그기 전이면 잠그기, 그 밖에는 저장 바 [등록] */
+/** Ctrl+S: 저장 바 [등록] */
 function handleSaveShortcut(e) {
   if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 's') return;
   e.preventDefault();   // 브라우저의 "페이지 저장" 막기
-  const screen = app.screen;
-  if (!screen) return;
-  const onAsisTab = app.tab === 'asis';
-  if (onAsisTab && !screen.meta.asisLocked && isDirty('asis')) return registerAsis();
-  if (onAsisTab && screen.meta.asisLocked && !SAVE_SECTIONS.some(([section]) => isDirty(section))) return toast(LOCKED_SAVE_MESSAGE);
-  saveAllChanges();
+  if (app.screen) saveAllChanges();
 }
 
 function initScreen() {
@@ -420,7 +244,7 @@ function initScreen() {
   sidePanel.addEventListener('click', handleScreenClick);
   main.addEventListener('change', e => {
     if (e.target.id === 'stSel') changeStatus(Number(e.target.value));
-    else if (e.target.dataset.pairSel) setTobePair(e.target.dataset.pairSel, e.target.value);   // 비교할 기존 SQL 선택
+    else if (e.target.dataset.pairSel) setTobePair(e.target.dataset.pairSel, e.target.value);   // 비교할 원본 SQL 선택
   });
   // 무엇이든 입력하면 탭 표시·저장 바 갱신. SQL 블록 제목은 입력하는 대로 대문자로 고침
   main.addEventListener('input', e => {

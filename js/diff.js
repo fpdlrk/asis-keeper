@@ -3,7 +3,8 @@
      - diffLines()        : 줄 단위 비교 (LCS 알고리즘)
      - sideBySideHtml()   : 나란히 보기 표 HTML — 비교 탭 · 비교 창 · 보고서가 함께 씀
      - 비교 창(#diffModal) : SQL 블록 하나 / 파일 하나
-     - 비교 탭(#cmpBody)   : 화면의 모든 SQL·파일을 한 번에
+     - 비교 탭(#cmpBody)   : 화면의 모든 SQL · 정의서 항목 · 파일을 한 번에 (신규 단계에서만 — 원본이 잠긴 뒤)
+       항목 이름을 누르면 그 탭의 그 항목으로 이동 (goToItem)
    ========================================================================== */
 
 /* 이보다 큰 비교(기존 줄 수 × 신규 줄 수)는 계산이 너무 오래 걸려 줄 비교를 생략 */
@@ -12,6 +13,9 @@ const MAX_DIFF_CELLS = 4e6;
 const DIFF_CONTEXT_LINES = 3;
 /* 이보다 큰 파일은 글자 비교 대신 해시로만 비교 */
 const MAX_TEXT_DIFF_BYTES = 2e6;
+
+/* 항목 상태별 꼬리표 색 (비교 탭) */
+const STATE_TAG_CLASS = {changed: 'warn', new: 'ok', gone: 'bad'};
 
 /* 비교 창 상태: SQL 비교면 {tobeBlockId}, 파일 비교면 {path} */
 let diffWindowState = null;
@@ -81,10 +85,10 @@ const diffCellHtml = text => (text === undefined || text === '') ? '&nbsp;' : es
 function sideBySideHtml(before, after, ignoreFormat = app.ignoreFormat) {
   before = normalizeLineBreaks(before);
   after = normalizeLineBreaks(after);
-  if (before === after) return '<p class="note">변경 없음 (기존과 동일)</p>';
+  if (before === after) return '<p class="note">변경 없음 (원본과 동일)</p>';
   if (ignoreFormat && isSameText(before, after, true)) return '<p class="note">변경 없음 (공백·줄바꿈·대소문자 차이만 있음)</p>';
   if (!before.trim()) return '<div class="cap">신규 등록</div><pre class="add">' + escapeHtml(after) + '</pre>';
-  if (!after.trim()) return '<div class="cap">신규 내용 없음 (기존 내용)</div><pre class="del">' + escapeHtml(before) + '</pre>';
+  if (!after.trim()) return '<div class="cap">신규 내용 없음 (원본 내용)</div><pre class="del">' + escapeHtml(before) + '</pre>';
 
   const rows = diffLines(before.split('\n'), after.split('\n'), ignoreFormat);
   if (!rows) {   // 너무 커서 줄 비교를 못 하면 통째로 나란히
@@ -161,6 +165,7 @@ function setIgnoreFormat(ignore) {
   $$('[data-ignore-format]').forEach(checkbox => { checkbox.checked = ignore; });
   if (!app.screen) return;
   readBlockInputs('tobe').forEach(block => markChangedLines(block.id));   // 신규 SQL 탭의 바뀐 줄 표시
+  refreshIndicators();   // SQL 탭의 원본 대비 상태(변경/동일)도 옵션에 따라 달라짐
   if (app.tab === 'cmp') renderCompareTab();
   if (!$('#diffModal').hidden) renderDiffWindow();
 }
@@ -175,12 +180,12 @@ function showDiffBlockPicker(show) {
 /** 신규 SQL 블록 하나를 기존 SQL 과 비교하는 창 (기본은 그 블록에 연결한 기존 블록) */
 function openSqlDiffWindow(tobeBlockId) {
   const asisBlocks = readBlockInputs('asis');
-  if (!asisBlocks.length) return toast('비교할 기존 SQL 블록이 없습니다.');
+  if (!asisBlocks.length) return toast('비교할 원본 SQL 블록이 없습니다.');
   const tobeBlocks = readBlockInputs('tobe');
   const order = tobeBlocks.findIndex(block => block.id === tobeBlockId);
   diffWindowState = {tobeBlockId};
 
-  $('#dfTitle').textContent = '기존과 비교 · ' + tobeBlocks[order].title;
+  $('#dfTitle').textContent = '원본과 비교 · ' + tobeBlocks[order].title;
   const picker = $('#dfA');
   picker.innerHTML = asisBlocks.map((block, i) => `<option value="${escapeHtml(block.id)}">${i + 1}. ${escapeHtml(block.title)}</option>`).join('');
   const paired = findPairedAsisBlock(tobeBlocks[order], order, asisBlocks);
@@ -205,7 +210,7 @@ function renderSqlDiffWindow() {
 async function openFileDiffWindow(path, pendingFile) {
   diffWindowState = {path, pendingFile};
   if (!(await renderFileDiffWindow())) return;
-  $('#dfTitle').textContent = '기존과 비교 · ' + path;
+  $('#dfTitle').textContent = '원본과 비교 · ' + path;
   showDiffBlockPicker(false);
   $('#dfHint').textContent = pendingFile ? '등록 대기 중인 신규 파일과 비교합니다.' : '';
   $('#diffModal').hidden = false;
@@ -234,16 +239,77 @@ function renderDiffWindow() {
 
 /* ======================= 비교 탭 ======================= */
 
-/** 비교 탭: 이 화면의 SQL·파일 변경을 한 번에 (등록하지 않은 입력값과 대기 파일 포함) */
+/** 항목 하나 줄: [이름(누르면 이동)] [상태] 자세히 */
+const compareItemRowHtml = (tabId, itemId, title, state, detail) => `<li>`
+  + `<button type="button" class="cmp-link" data-goto-tab="${tabId}" data-bid="${escapeHtml(itemId)}">${escapeHtml(title || UNNAMED_DEF_TITLE)}</button>`
+  + `<span class="tag ${STATE_TAG_CLASS[state] || ''}">${ITEM_STATE_LABELS[state]}</span>`
+  + (detail ? `<span class="muted">${escapeHtml(detail)}</span>` : '') + `</li>`;
+
+/** 정의서 항목 비교 결과 요약 글: '이름 · 정의 2칸 · 메세지정의: 변경 1줄 · 추가 1줄' */
+function defDiffDetail(tab, diff) {
+  const parts = [];
+  if (diff.titleChanged) parts.push('이름');
+  if (diff.info.length) parts.push(`정의 ${diff.info.length}칸`);
+  for (const [key, label] of DEF_TABS[tab].grids) {
+    const summary = diff.grids[key] ? gridDiffSummary(diff.grids[key]) : '';
+    if (summary) parts.push(`${label}: ${summary}`);
+  }
+  return parts.join(' · ');
+}
+
+/** SQL 정의 · 파라미터 비교 결과 요약 글 (차이가 없으면 '') */
+function sqlDefinitionDiffDetail(diff) {
+  const parts = [];
+  if (diff.info.length) parts.push(`SQL 정의 ${diff.info.length}칸`);
+  const params = gridDiffSummary(diff.params);
+  if (params) parts.push(`파라미터: ${params}`);
+  return parts.join(' · ');
+}
+
+/**
+ * 비교 탭의 정의서 영역 하나: 원본과 다른 항목 목록 (같은 항목은 개수만)
+ * @param {object} counts 상태별 개수를 더해 갈 곳 {changed, new, gone}
+ * @returns {string} 항목이 하나도 없으면 ''
+ */
+function defCompareHtml(tab, counts) {
+  const originals = app.screen.asisDefItems[tab] || [];
+  const rows = [];
+  let sameCount = 0;
+  for (const item of readDefInputs(tab)) {
+    const original = item.asisId ? originals.find(asis => asis.id === item.asisId) : null;
+    const diff = diffDefItem(tab, original || null, item);
+    if (diff.state === 'same') {
+      sameCount++;
+      continue;
+    }
+    counts[diff.state]++;
+    rows.push(compareItemRowHtml(tab, item.id, item.title, diff.state, diff.state === 'changed' ? defDiffDetail(tab, diff) : ''));
+  }
+  for (const gone of goneDefItems(tab)) {
+    counts.gone++;
+    rows.push(compareItemRowHtml(tab, GONE_TAB_PREFIX + gone.id, gone.title, 'gone', ''));
+  }
+  if (!rows.length && !sameCount) return '';
+  const sameNote = sameCount ? ` · 원본과 같은 항목 ${sameCount}개` : '';
+  return `<h3>${escapeHtml(DEF_TABS[tab].label)} <span class="muted">정의서${sameNote}</span></h3>`
+    + (rows.length ? `<ul class="cmp-items">${rows.join('')}</ul>` : '<p class="note">변경 없음 (원본과 동일)</p>');
+}
+
+/** 비교 탭: 이 화면의 SQL · 정의서 · 파일 변경을 한 번에 (등록하지 않은 입력값과 대기 파일 포함) */
 async function renderCompareTab() {
   const box = $('#cmpBody');
   if (!box) return;
   const seq = ++compareRenderSeq;
   const screen = app.screen;
+  if (!isLocked()) {
+    box.innerHTML = '<div class="empty-box"><b>원본 단계입니다</b><p class="muted">원본을 모두 넣고 위쪽 [원본 등록 후 잠그기]를 누르면, 이후 신규 작업과 원본을 여기에서 한 번에 비교할 수 있습니다.</p></div>';
+    return;
+  }
   box.innerHTML = '<p class="muted">비교하는 중…</p>';
 
   const sections = [];
   const summary = {sql: 0, sqlNew: 0, sqlGone: 0, modified: 0, added: 0, same: 0, asisOnly: 0};
+  const defCounts = {changed: 0, new: 0, gone: 0};
 
   // 1) SQL: 신규 블록에 연결된 기존 블록끼리 (연결은 findPairedAsisBlock)
   const asisBlocks = readBlockInputs('asis'), tobeBlocks = readBlockInputs('tobe');
@@ -252,27 +318,36 @@ async function renderCompareTab() {
     const before = findPairedAsisBlock(after, order, asisBlocks);
     if (before) pairedAsisIds.add(before.id);
     if (!after.sql.trim() && !(before && before.sql.trim())) return;
+    const link = `<button type="button" class="cmp-link" data-goto-tab="sql" data-bid="${escapeHtml(after.id)}">${escapeHtml(after.title)}</button>`;
     if (!before) {
       summary.sqlNew++;
-      sections.push(`<h3>${escapeHtml(after.title)} <span class="muted">SQL · 신규 쿼리 (비교 대상 없음)</span></h3>`
+      sections.push(`<h3>${link} <span class="muted">SQL · 신규 쿼리 (비교 대상 없음)</span></h3>`
         + sideBySideHtml('', after.sql));
       return;
     }
-    if (!isSameText(before.sql, after.sql, app.ignoreFormat)) summary.sql++;
-    const title = before.title !== after.title
-      ? `${escapeHtml(before.title)} → ${escapeHtml(after.title)}`
-      : escapeHtml(after.title);
-    sections.push(`<h3>${title} <span class="muted">SQL</span></h3>` + sideBySideHtml(before.sql, after.sql));
+    const definitionDetail = sqlDefinitionDiffDetail(diffSqlDefinition(readSqlDefinition('asis', before.element), readSqlDefinition('tobe', after.element)));
+    if (!isSameText(before.sql, after.sql, app.ignoreFormat) || definitionDetail) summary.sql++;
+    const titleNote = before.title !== after.title ? ` <span class="muted">원본 이름: ${escapeHtml(before.title)}</span>` : '';
+    sections.push(`<h3>${link} <span class="muted">SQL</span>${titleNote}</h3>`
+      + (definitionDetail ? `<p class="note">${escapeHtml(definitionDetail)} 변경 — 이름을 누르면 바뀐 칸을 볼 수 있습니다.</p>` : '')
+      + sideBySideHtml(before.sql, after.sql));
   });
-  // 어느 신규 블록도 가리키지 않는 기존 블록 = 신규에서 빠진 쿼리
+  // 어느 신규 블록도 가리키지 않는 원본 블록 = 신규에서 지운 쿼리
   for (const before of asisBlocks) {
-    if (pairedAsisIds.has(before.id) || !before.sql.trim()) continue;
+    if (pairedAsisIds.has(before.id)) continue;
     summary.sqlGone++;
-    sections.push(`<h3>${escapeHtml(before.title)} <span class="muted">SQL · 기존만 있음 (신규에 없음)</span></h3>`
+    const link = `<button type="button" class="cmp-link" data-goto-tab="sql" data-bid="${escapeHtml(GONE_TAB_PREFIX + before.id)}">${escapeHtml(before.title)}</button>`;
+    sections.push(`<h3>${link} <span class="muted">SQL · 삭제됨 (원본에만 있음)</span></h3>`
       + sideBySideHtml(before.sql, ''));
   }
 
-  // 2) 파일: 등록된 신규 파일 + 등록 대기 파일 (대기 파일이 우선)
+  // 2) 정의서: 항목마다 원본과 비교
+  for (const tab of Object.keys(DEF_TABS)) {
+    const html = defCompareHtml(tab, defCounts);
+    if (html) sections.push(html);
+  }
+
+  // 3) 파일: 등록된 신규 파일 + 등록 대기 파일 (대기 파일이 우선)
   const tobeFiles = new Map(screen.savedFiles.tobe.map(path => [path, null]));
   screen.pendingFiles.tobe.forEach(item => tobeFiles.set(item.path, item.file));
   const allPaths = [...new Set([...screen.savedFiles.asis, ...tobeFiles.keys()])].sort((a, b) => a.localeCompare(b));
@@ -297,19 +372,20 @@ async function renderCompareTab() {
       sections.push(`<h3>${pathHtml} <span class="muted">신규 파일 · 비교 대상 없음</span></h3>`);
     } else {
       summary.asisOnly++;
-      sections.push(`<h3>${pathHtml} <span class="muted">기존 파일만 있음 · 신규 없음</span></h3>`);
+      sections.push(`<h3>${pathHtml} <span class="muted">원본 파일만 있음 · 신규 없음</span></h3>`);
     }
   }
   if (seq !== compareRenderSeq) return;
 
   if (!sections.length) {
-    box.innerHTML = '<div class="empty-box"><b>비교할 내용이 없습니다</b><p class="muted">기존 내용과 신규 내용을 입력하면 여기에서 한 번에 비교할 수 있습니다.</p></div>';
+    box.innerHTML = '<div class="empty-box"><b>비교할 내용이 없습니다</b><p class="muted">원본과 신규 내용이 있으면 여기에서 한 번에 비교할 수 있습니다.</p></div>';
     return;
   }
   const chip = (count, label, kind) => count ? `<span class="tag ${kind}">${label} ${count}건</span>` : '';
-  const chips = chip(summary.sql, 'SQL 변경', 'warn') + chip(summary.sqlNew, 'SQL 신규', 'ok') + chip(summary.sqlGone, 'SQL 기존만', '')
+  const chips = chip(summary.sql, 'SQL 변경', 'warn') + chip(summary.sqlNew, 'SQL 신규', 'ok') + chip(summary.sqlGone, 'SQL 삭제', 'bad')
+    + chip(defCounts.changed, '정의서 변경', 'warn') + chip(defCounts.new, '정의서 신규', 'ok') + chip(defCounts.gone, '정의서 삭제', 'bad')
     + chip(summary.modified, '파일 수정', 'warn') + chip(summary.added, '파일 신규', 'ok')
-    + chip(summary.same, '파일 동일', '') + chip(summary.asisOnly, '파일 기존만', '');
+    + chip(summary.same, '파일 동일', '') + chip(summary.asisOnly, '파일 원본만', '');
   box.innerHTML = `<div class="cmp-sum">${chips || '<span class="tag">변경 없음</span>'}</div>`
     + `<div class="cmp">${sections.join('')}</div>`;
 }

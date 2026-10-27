@@ -1,34 +1,39 @@
 /* ==========================================================================
    screen.js — 화면(메뉴) 하나 열기 · 그리기 · 탭 · 변경 감지
 
-   화면 관련 코드는 네 파일로 나뉩니다.
-     screen.js        : 화면 상태, 열기/그리기, 편집기 만들기, 탭, 변경 감지(저장 바 표시)
-     screen-blocks.js : SQL 블록 (그리기·삭제, 기존과 나란히 보기, 바뀐 줄 표시, 변경 이력)
-     screen-sqltabs.js: 알약 탭(공통) · SQL 탭 ([+ SQL 추가] 창) · 항목 이력(공통)
-     screen-defs.js   : 정의서 탭 (서비스 · 오브젝트 · 공통코드관리 — 항목마다 탭 · 표 · 이력)
-     screen-files.js  : 파일 목록 (끌어다 놓기, 저장 경로, 신규/수정/동일 표시)
-     screen-save.js   : 등록 · 잠그기 · 상태 변경 · 원본 무결성 확인, 화면 이벤트 연결
+   화면 관련 코드는 여러 파일로 나뉩니다.
+     screen.js         : 화면 상태, 열기/그리기, 편집기 만들기, 탭, 변경 감지(저장 바 표시), 표 · 정의 칸 HTML
+     screen-blocks.js  : SQL 블록 (그리기·삭제, 원본과 나란히 보기, 바뀐 줄 표시, 변경 이력)
+     screen-sqltabs.js : 알약 탭(공통) · SQL 탭 ([+ SQL 추가] 창) · 항목 이력(공통)
+     screen-defs.js    : 정의서 탭 (서비스 · 오브젝트 · 공통코드관리 — 항목마다 탭 · 정의 칸 · 표 · 이력)
+     screen-changes.js : 신규 단계에서 원본과 다른 곳 표시 · 삭제된 항목/줄 · 되살리기
+     screen-lock.js    : 원본 잠그기 · 잠금 풀기 · 원본 확인(해시)
+     screen-grid.js    : 표 조작 (범위 선택 · 키보드 · 붙여넣기 · 되돌리기)
+     screen-files.js   : 파일 목록 (끌어다 놓기, 저장 경로, 신규/수정/동일 표시)
+     screen-save.js    : 등록 · 상태 변경, 화면 이벤트 연결
 
-   탭: 기존 SQL · 신규 SQL · 비교 · 서비스 · 오브젝트 · 공통코드관리 · 첨부
+   탭: SQL · 비교 · 서비스 · 오브젝트 · 공통코드관리 · 첨부
+   원본 / 신규: 잠그기 전(원본 단계)에는 모든 탭이 원본을, 잠근 뒤(신규 단계)에는 신규를 고칩니다 (screen-lock.js)
    오른쪽 영역: 상태 이력(위 50%) · 메모(아래 50%)
-   등록은 하단 저장 바 하나로 모음. 단, 기존(ASIS)은 되돌릴 수 없어 "등록 후 잠그기"로 따로 등록.
+   등록은 하단 저장 바 하나로 모음. 잠그기는 화면 위 단계 안내 띠의 단추로.
    ========================================================================== */
 
 /* ---- 탭 · 등록 영역 ---- */
 const SCREEN_TABS = [
-  ['asis', '기존 SQL'], ['tobe', '신규 SQL'], ['cmp', '비교'],
+  ['sql', 'SQL'], ['cmp', '비교'],
   ['service', '서비스'], ['object', '오브젝트'], ['code', '공통코드관리'], ['attach', '첨부']
 ];
-/* 저장 바의 [등록] 이 다루는 영역과 이름 (등록 순서대로). 'common' = 티켓·작업자·원본 위치·메모 */
+/* 저장 바의 [등록] 이 다루는 영역과 이름 (등록 순서대로). 'common' = 티켓·작업자·원본 위치·메모
+   'sql' 과 정의서 탭은 지금 고치는 쪽(원본 단계 → 원본, 신규 단계 → 신규)에 저장 */
 const SAVE_SECTIONS = [
-  ['common', '작업 정보'], ['tobe', '신규 SQL'], ['service', '서비스'],
+  ['common', '작업 정보'], ['sql', 'SQL'], ['service', '서비스'],
   ['object', '오브젝트'], ['code', '공통코드관리'], ['attach', '첨부']
 ];
 
 /* ---- 편집기 ----
    편집기 id 규칙
      글 입력란: TEXT_FIELD_FILES 의 키 (memo)
-     SQL 블록 : 접두어 + 블록 id  →  a:기존 SQL  t:신규 SQL  r:(예전) 롤백 SQL  p:신규 탭 왼쪽의 기존 SQL(읽기 전용) */
+     SQL 블록 : 접두어 + 블록 id  →  a:원본 SQL  t:신규 SQL  r:(예전) 롤백 SQL  p:신규 블록 왼쪽의 원본 SQL(읽기 전용) */
 const EDITOR_PREFIX = {asis: 'a:', tobe: 't:', rollback: 'r:', pair: 'p:'};
 const editorId = (kind, blockId) => EDITOR_PREFIX[kind] + blockId;
 /* 글 입력란 높이(px). 여기에 없는 id 는 SQL 편집기 */
@@ -48,11 +53,13 @@ function createScreenState(path, dir, meta) {
     dir,                  // 화면 폴더 핸들
     meta,                 // meta.json 내용
     initialValues: {},    // 편집기 id → 처음 그릴 때 넣을 값
-    blocks: {asis: [], tobe: []},       // SQL 블록 정보
+    blocks: {asis: [], tobe: []},       // SQL 블록 정보 (원본 · 신규)
     activeBlock: {asis: '', tobe: ''},  // 지금 보고 있는 SQL 탭(블록 id)
-    defItems: {},         // 정의서 탭 → 항목 [{id, title, grids, log}] (표의 지금 값은 화면에서 읽음, screen-defs.js)
-    savedDefItems: {},    // 정의서 탭 → 마지막으로 등록된 항목 목록 (변경 감지 · 이력 바로 저장용)
+    defItems: {},         // 정의서 탭 → 지금 고치는 쪽 항목 [{id, asisId?, title, info, grids, rowIds, log}] (screen-defs.js)
+    savedDefItems: {},    // 정의서 탭 → 그 쪽의 마지막으로 등록된 항목 목록 (변경 감지 · 이력 바로 저장용)
+    asisDefItems: {},     // 정의서 탭 → 원본 항목 (신규 단계에서 비교 · 삭제된 항목 표시, screen-changes.js)
     activeDef: {},        // 정의서 탭 → 지금 보고 있는 항목 id
+    goneRows: {},         // 표 id → 원본에만 있는 줄 [{id, cells}] (삭제된 줄 되살리기용, screen-changes.js)
     removedTobeBlocks: [],              // 삭제한 신규 블록 (등록할 때 파일도 지움)
     removedAsisBlocks: [],              // 잠금을 푼 뒤 삭제한 등록된 기존 블록 (다시 잠글 때 파일도 지움)
     savedFiles: {asis: [], tobe: [], attach: []},    // 등록된 파일 경로
@@ -88,21 +95,30 @@ const GRID_CELL_SELECTOR = 'input, select';
 const gridCellDefault = (columnsKey, col) => ((GRID_COLUMNS[columnsKey].options || {})[col] || [''])[0];
 
 /**
- * 표의 지금 값 (빈 줄 제외)
+ * 표의 지금 값 {rows: 칸 값들, ids: 줄 id 들} (빈 줄 제외)
  * 모든 칸이 기본값인 줄은 빈 줄로 봅니다 — 고르는 칸(기본 '미적용')만 있는 새 줄이 저장되지 않게
+ * 줄 id(tr 의 data-rid)는 원본과 신규의 같은 줄을 짝짓는 데 씁니다 (layer-diff.js)
  */
-function readGridRowsOf(table) {
+function readGridOf(table) {
   const columnsKey = table.dataset.cols;
-  return [...table.tBodies[0].rows]
-    .map(row => [...row.querySelectorAll(GRID_CELL_SELECTOR)].map(cell => cell.value.trim()))
-    .filter(cells => cells.some((value, col) => value !== gridCellDefault(columnsKey, col)));
+  const rows = [], ids = [];
+  for (const tr of table.tBodies[0].rows) {
+    const cells = [...tr.querySelectorAll(GRID_CELL_SELECTOR)].map(cell => cell.value.trim());
+    if (!cells.some((value, col) => value !== gridCellDefault(columnsKey, col))) continue;
+    rows.push(cells);
+    ids.push(tr.dataset.rid);
+  }
+  return {rows, ids};
 }
 
 /** 영역에 등록된 내용이 있는지 (탭의 ✓ 표시) */
 function isRegistered(section) {
   const screen = app.screen;
-  if (section === 'asis') return !!screen.meta.asisLocked;
-  if (section === 'tobe') return screen.hasSavedTobe || screen.savedFiles.tobe.length > 0;
+  if (section === 'sql') {
+    return isLocked()
+      ? screen.hasSavedTobe || screen.savedFiles.tobe.length > 0
+      : ((screen.meta.sqlBlocks && screen.meta.sqlBlocks.asis) || []).length > 0;
+  }
   if (section === 'attach') return screen.savedFiles.attach.length > 0;
   if (section === 'common') return !!(screen.savedValues.memo || '').trim();
   if (section in DEF_TABS) return (screen.savedDefItems[section] || []).length > 0;
@@ -113,8 +129,7 @@ function isRegistered(section) {
 function isDirty(section) {
   const screen = app.screen;
   if (!screen) return false;
-  if (section === 'asis') return !screen.meta.asisLocked && (isBlockListChanged('asis') || screen.pendingFiles.asis.length > 0);
-  if (section === 'tobe') return isBlockListChanged('tobe') || screen.pendingFiles.tobe.length > 0;
+  if (section === 'sql') return isBlockListChanged(currentLayer()) || screen.pendingFiles[currentLayer()].length > 0;
   if (section === 'attach') return screen.pendingFiles.attach.length > 0;
   if (section === 'common') {
     const fieldChanged = COMMON_FIELDS.some(field => $('#' + field) && $('#' + field).value.trim() !== (screen.meta[field] || ''));
@@ -125,7 +140,7 @@ function isDirty(section) {
 }
 
 /** 화면 어디든 등록하지 않은 변경이 있는지 */
-const hasUnsavedChanges = () => ['asis', ...SAVE_SECTIONS.map(([section]) => section)].some(isDirty);
+const hasUnsavedChanges = () => SAVE_SECTIONS.some(([section]) => isDirty(section));
 
 /**
  * 다른 곳으로 이동해도 되는지: 등록하지 않은 변경이 있으면 버리고 이동할지 물음
@@ -151,24 +166,21 @@ function refreshIndicators() {
     mark.title = dirty ? '아직 등록하지 않은 변경이 있습니다' : registered ? '등록된 내용이 있습니다' : '';
   }
 
-  // 첨부 탭 이름에 개수, 신규 SQL 탭 위 요약
+  // 첨부 탭 이름에 개수, 탭 줄의 이름 · ● · 원본 대비 상태
   const attachLabel = $('.tab[data-t="attach"] .tl');
   if (attachLabel) attachLabel.textContent = '첨부' + (screen.savedFiles.attach.length ? ' ' + screen.savedFiles.attach.length : '');
-  const tobeSummary = $('#tobeSum');
-  if (tobeSummary) tobeSummary.textContent = `SQL ${$$('#blocks-tobe .blk').length}개`;
-  refreshSqlTabMarks('asis');
-  refreshSqlTabMarks('tobe');
+  refreshSqlTabMarks(currentLayer());
   for (const tab of Object.keys(DEF_TABS)) refreshDefTabMarks(tab);
+  scheduleChangeMarks();
 
-  // 저장 바
+  // 저장 바 (원본 단계면 원본을 등록한다는 것을 함께 알림)
   const dirtySections = SAVE_SECTIONS.filter(([section]) => isDirty(section));
-  const asisDirty = isDirty('asis');
+  const layerNote = isLocked() ? '' : '<span class="muted">· 원본 단계: 등록하면 원본으로 저장됩니다</span>';
   $('#sbText').innerHTML = (dirtySections.length
     ? `<i class="dot warn"></i><b>등록하지 않은 변경 ${dirtySections.length}건</b><span class="muted">${dirtySections.map(([, label]) => label).join(' · ')}</span>`
-    : `<span class="muted ok-t">${ICON.check} 모든 변경이 등록되었습니다</span>`)
-    + (asisDirty ? '<span class="muted">· 기존 내용은 ‘기존 SQL’ 탭에서 등록 후 잠급니다</span>' : '');
+    : `<span class="muted ok-t">${ICON.check} 모든 변경이 등록되었습니다</span>`) + layerNote;
   $('#btnSaveAll').disabled = !dirtySections.length;
-  $('#btnDiscard').disabled = !dirtySections.length && !asisDirty;
+  $('#btnDiscard').disabled = !dirtySections.length;
   renderMiniBar();
 }
 
@@ -202,8 +214,7 @@ async function openScreen(path, reload) {
       screen.activeDef = {...previousScreen.activeDef};
     }
     app.screen = screen;
-    // 처음 보여 줄 탭: 기존 내용이 아직 없으면 기존 SQL, 등록했으면 신규 SQL
-    if (!reload) app.tab = meta.asisLocked ? 'tobe' : 'asis';
+    if (!reload) app.tab = 'sql';
 
     for (const [fieldId, file] of Object.entries(TEXT_FIELD_FILES)) screen.initialValues[fieldId] = await readText(dir, file) || '';
     screen.blocks.asis = await loadSqlBlocks(dir, meta, 'asis');
@@ -213,8 +224,11 @@ async function openScreen(path, reload) {
       screen.initialValues[editorId('tobe', block.id)] = block.sql;
       screen.initialValues[editorId('rollback', block.id)] = block.rbText;
     }
+    // 정의서: 화면에는 지금 고치는 쪽만, 원본은 비교용으로 따로
     for (const tab of Object.keys(DEF_TABS)) {
-      screen.defItems[tab] = await loadDefItems(dir, tab);
+      const layers = await loadDefLayers(dir, tab, !!meta.asisLocked);
+      screen.asisDefItems[tab] = layers.asis;
+      screen.defItems[tab] = meta.asisLocked ? layers.tobe : layers.asis;
       screen.savedDefItems[tab] = JSON.parse(JSON.stringify(screen.defItems[tab]));   // 등록된 상태 (따로 복사해 둠)
     }
     for (const kind of Object.keys(FILE_DIRS)) screen.savedFiles[kind] = await listFilesDeep(dir, FILE_DIRS[kind]);
@@ -239,8 +253,11 @@ const hoverCopyButtonHtml = dataAttr =>
 /**
  * 표의 한 줄
  * @param {string} columnsKey GRID_COLUMNS 의 키 (예: 'service.attrs')
+ * @param {string[]} cells 칸 값
+ * @param {boolean} [readOnly] 고칠 수 없는 줄
+ * @param {string} [rowId] 줄 id (없으면 새로 만듦 — 새로 넣은 줄)
  */
-function gridRowHtml(columnsKey, cells, readOnly = false) {
+function gridRowHtml(columnsKey, cells, readOnly = false, rowId = newId('r')) {
   const {cols, types, options = {}} = GRID_COLUMNS[columnsKey];
   // 날짜 칸도 글 입력칸으로 둡니다 — 20260101 처럼 숫자만 쳐도 칸을 떠날 때 2026-01-01 로 맞춤(screen-grid.js),
   // 브라우저 날짜 입력칸은 방향키·범위 선택·복사와 함께 쓰기 어렵기 때문
@@ -255,7 +272,7 @@ function gridRowHtml(columnsKey, cells, readOnly = false) {
     return `<input type="text" aria-label="${col}"${typeAttrs(types[i])}${readOnly ? ' readonly' : ''} value="${escapeHtml(cells[i] || '')}">`;
   };
   const inputs = cols.map((col, i) => `<td>${cellHtml(col, i)}</td>`).join('');
-  return `<tr>${inputs}<td><button type="button" class="icon" data-del aria-label="행 삭제">✕</button></td></tr>`;
+  return `<tr data-rid="${escapeHtml(rowId)}">${inputs}<td><button type="button" class="icon" data-del aria-label="행 삭제">✕</button></td></tr>`;
 }
 
 /* ======================= 정의 칸 (SQL 정의 · 공통코드 정의) ======================= */
@@ -300,19 +317,25 @@ function readInfoFields(container) {
 }
 
 /**
- * 표 하나: 제목 줄(제목 + 오른쪽 끝 [+ 행 추가]) + 표 (행이 없으면 빈 줄 하나)
+ * 표 하나: 제목 줄(제목 + 오른쪽 끝 [+ 행 추가]) + 표 (행이 없으면 빈 줄 하나) + 삭제된 줄 자리(신규 단계, screen-changes.js)
  * 같은 종류의 표가 화면에 여러 개 있을 수 있어(정의서 항목마다), 표마다 고유 id 를 주고 열 구성은 data-cols 로 찾습니다.
  * @param {string} tableId    표 요소 id (화면 안에서 고유)
  * @param {string} columnsKey GRID_COLUMNS 의 키
+ * @param {{rows: string[][], ids?: string[]}} grid 표 값 (ids 가 없으면 예전 방식 줄 id)
  * @param {string} title      표 제목 (예: '속성정의')
- * @param {boolean} [readOnly] 잠긴 기존 SQL 의 표처럼 고칠 수 없는 표 (고르기·복사는 됨. 행 추가·삭제 단추는 CSS 로 숨김)
+ * @param {boolean} [readOnly] 고칠 수 없는 표 — 원본(잠긴 뒤) · 삭제된 항목 (고르기·복사는 됨. 행 추가·삭제 단추는 숨김)
  */
-function gridHtml(tableId, columnsKey, rows, title, readOnly = false) {
+function gridHtml(tableId, columnsKey, grid, title, readOnly = false) {
   const header = GRID_COLUMNS[columnsKey].cols.map(col => `<th>${col}</th>`).join('');
-  const body = (rows && rows.length ? rows : [[]]).map(cells => gridRowHtml(columnsKey, cells, readOnly)).join('');
-  return `<div class="fld"><div class="fld-h"><span class="fld-l grid-title">${escapeHtml(title)}</span>`
-    + `<button type="button" class="btn btn-s" data-add="${tableId}">+ 행 추가</button></div>`
-    + `<div class="gridwrap"><table class="grid" id="${tableId}" data-cols="${columnsKey}"><thead><tr>${header}<th></th></tr></thead><tbody>${body}</tbody></table></div></div>`;
+  const rows = (grid && grid.rows) || [];
+  const ids = rowIdsOf(rows, grid && grid.ids);
+  const body = rows.length
+    ? rows.map((cells, i) => gridRowHtml(columnsKey, cells, readOnly, ids[i])).join('')
+    : gridRowHtml(columnsKey, [], readOnly);
+  const addButton = readOnly ? '' : `<button type="button" class="btn btn-s" data-add="${tableId}">+ 행 추가</button>`;
+  return `<div class="fld${readOnly ? ' readonly' : ''}"><div class="fld-h"><span class="fld-l grid-title">${escapeHtml(title)}</span>${addButton}</div>`
+    + `<div class="gridwrap"><table class="grid" id="${tableId}" data-cols="${columnsKey}"><thead><tr>${header}<th></th></tr></thead><tbody>${body}</tbody></table></div>`
+    + `<div class="gone-rows" data-gone-rows="${tableId}"></div></div>`;
 }
 
 /** 상태 이력 목록 — 한 줄 형식: [요청] 2026.10.20 · 홍길동 (바꾼 사람 기록이 없으면 이 화면의 작업자, 그것도 없으면 -) */
@@ -326,39 +349,7 @@ function statusLogHtml(meta) {
   }).join('');
 }
 
-/** 잠금을 푼 적이 있는지 (처음 등록 전인지 / 다시 잠근 것인지 구분할 때 씀) */
-const wasAsisUnlocked = meta => (meta.asisUnlockLog || []).length > 0;
-
-/** 기존 SQL 탭 위 안내: 잠긴 뒤 — 오른쪽 [잠금 풀기]로 사유를 남기고 다시 편집할 수 있습니다 */
-const lockedBannerHtml = meta => `${ICON.lock}<b>${escapeHtml(meta.asisSavedAt || '')} 등록 · 잠김</b>`
-  + `<span class="muted">수정할 내용은 ‘신규 SQL’ 탭에서 작업하세요.</span><span class="sp"></span>`
-  + `<button type="button" class="btn btn-s" id="unlockAsis" title="사유를 남기면 기존 내용을 다시 편집할 수 있습니다">${ICON.unlock}잠금 풀기</button>`;
-
-/** 기존 SQL 탭 위 안내: 잠그기 전 (처음 등록 전 / 잠금을 푼 뒤) */
-function unlockedBannerHtml(meta) {
-  const reopened = wasAsisUnlocked(meta);
-  const head = reopened
-    ? `${ICON.unlock}<b>잠금이 풀려 있습니다</b><span class="muted">수정을 마치면 다시 등록해 잠가 주세요. 다시 잠그면 지금 내용이 새 원본 기준이 됩니다.</span>`
-    : `${ICON.warn}<b>아직 등록하지 않았습니다</b><span class="muted">등록하면 잠겨서 이후 수정·삭제할 수 없습니다.</span>`;
-  return head + `<span class="sp"></span><button type="button" class="btn btn-s btn-primary" id="saveAsis">`
-    + `${reopened ? '수정 내용 등록 후 다시 잠그기' : '기존 내용 등록 후 잠그기'}</button>`;
-}
-
-/** 잠금 해제 이력 띠 — 푼 적이 없으면 아무것도 그리지 않습니다 (해제 중·다시 잠근 뒤 모두 남음) */
-function unlockLogBannerHtml(meta) {
-  const entries = meta.asisUnlockLog || [];
-  if (!entries.length) return '';
-  const items = entries.map(entry => `<li>${escapeHtml(formatDateTime(entry.at))}`
-    + `<span class="sep">·</span>${escapeHtml(entry.by || '-')}`
-    + `<span class="sep">·</span><b>${escapeHtml(entry.reason || '')}</b>`
-    + (entry.relockedAt
-      ? `<span class="ul-end">${escapeHtml(formatDateTime(entry.relockedAt))} 다시 잠금</span>`
-      : `<span class="ul-end open">아직 잠그지 않음</span>`)
-    + `</li>`).join('');
-  return `<div class="banner warn unlocklog">${ICON.unlock}<ul aria-label="잠금 해제 이력">${items}</ul></div>`;
-}
-
-/** 화면 위쪽: 제목 · 작업 정보 한 줄 · 경고 · 탭 */
+/** 화면 위쪽: 제목 · 작업 정보 한 줄 · 경고 · 단계 안내(원본/신규) · 잠금 해제 이력 · 탭 */
 function screenHeaderHtml(meta) {
   const statusIndex = statusIndexOf(meta);
   const statusOptions = STATUS_LIST.map((name, i) => `<option value="${i}"${i === statusIndex ? ' selected' : ''}>${name}</option>`).join('');
@@ -374,28 +365,33 @@ function screenHeaderHtml(meta) {
       <span id="integrity"></span>
     </div>
     <div id="warn"></div>
+    <div class="phase">${phaseBannerHtml(meta)}${unlockLogBannerHtml(meta)}</div>
     <nav class="tabs" role="tablist" aria-label="화면 탭">${tabs}</nav>
   </div>`;
 }
 
-/** 탭별 내용 */
+/**
+ * 탭별 내용
+ * SQL 탭에는 원본 블록과 신규 블록을 함께 그리고 단계에 맞는 쪽만 보입니다.
+ * 신규 단계의 원본 블록은 숨긴 채 읽기 전용으로 두고, 신규 블록 왼쪽 비교 · 원본 대비 표시가 여기서 원본 값을 읽습니다.
+ */
 function screenPanelsHtml(meta) {
   const screen = app.screen;
   const locked = !!meta.asisLocked;
   return `<div class="scr-body">
-    <div class="panel" data-t="asis">
-      <div class="banner ${locked ? 'lock' : 'info'}" id="asisBanner">${locked ? lockedBannerHtml(meta) : unlockedBannerHtml(meta)}</div>
-      <div id="asisUnlockLog">${unlockLogBannerHtml(meta)}</div>
-      ${pillTabsBarHtml('asis')}
-      <div id="blocks-asis" class="blocks${locked ? ' locked' : ''}">${screen.blocks.asis.map(block => sqlBlockHtml('asis', block, locked)).join('')}</div>
-    </div>
-
-    <div class="panel" data-t="tobe">
-      <div class="toolbar"><span class="muted" id="tobeSum"></span><span class="sp"></span>
-        ${ignoreFormatToggleHtml()}</div>
-      ${pillTabsBarHtml('tobe')}
-      <div id="blocks-tobe" class="blocks">${screen.blocks.tobe.map(block => sqlBlockHtml('tobe', block, false)).join('')}</div>
-      <div id="hist"></div>
+    <div class="panel" data-t="sql">
+      <div class="layer" data-layer="asis"${locked ? ' hidden' : ''}>
+        ${pillTabsBarHtml('asis')}
+        <div id="blocks-asis" class="blocks${locked ? ' locked' : ''}">${screen.blocks.asis.map(block => sqlBlockHtml('asis', block, locked)).join('')}</div>
+      </div>
+      <div class="layer" data-layer="tobe"${locked ? '' : ' hidden'}>
+        <div class="toolbar"><span class="muted">신규 SQL 마다 왼쪽에 원본을 나란히 보여 주고 바뀐 줄을 색칠합니다.</span><span class="sp"></span>
+          ${ignoreFormatToggleHtml()}</div>
+        ${pillTabsBarHtml('tobe')}
+        <div id="blocks-tobe" class="blocks">${screen.blocks.tobe.map(block => sqlBlockHtml('tobe', block, false)).join('')}</div>
+        <div id="gone-tobe" class="blocks"></div>
+        <div id="hist"></div>
+      </div>
     </div>
 
     <div class="panel" data-t="cmp">
@@ -441,7 +437,7 @@ const miniBarShellHtml = () => '<div class="scr-mini" id="scrMini"><div class="s
  */
 function currentPillItem() {
   const screen = app.screen;
-  const barId = app.tab;
+  const barId = app.tab === 'sql' ? currentLayer() : app.tab;
   const activeId = isSqlTabBar(barId) ? screen.activeBlock[barId] : (barId in DEF_TABS ? screen.activeDef[barId] : '');
   const tab = activeId ? $(`#tabs-${barId} [data-tab-bid="${activeId}"]`) : null;
   return tab ? {title: tab.querySelector('.sqltab-t').textContent, dirty: tab.classList.contains('dirty')} : null;
@@ -515,7 +511,7 @@ async function renderScreen() {
     setupDropZone(kind);
   }
   $$('.tab').forEach(button => { button.onclick = () => showTab(button.dataset.t); });
-  if (!SCREEN_TABS.some(([id]) => id === app.tab)) app.tab = 'tobe';
+  if (!SCREEN_TABS.some(([id]) => id === app.tab)) app.tab = 'sql';
   showTab(app.tab);
   refreshIndicators();
   verifyIntegrity();
@@ -602,7 +598,20 @@ function showTab(tabId) {
     button.setAttribute('aria-selected', String(active));
   });
   resizeAllEditors();
-  if (tabId === 'tobe') refreshPairedBlocks();
+  if (tabId === 'sql' && isLocked()) refreshPairedBlocks();
   if (tabId === 'cmp') renderCompareTab();
+  scheduleChangeMarks();
   renderMiniBar();
+}
+
+/**
+ * 탭 · 항목으로 이동 (비교 탭의 항목 이름을 누를 때)
+ * @param {string} tabId 화면 탭 ('sql' 또는 정의서 탭)
+ * @param {string} itemId SQL 블록 id 또는 정의서 항목 id ('삭제됨' 탭은 GONE_TAB_PREFIX 가 붙은 id)
+ */
+function goToItem(tabId, itemId) {
+  showTab(tabId);
+  if (tabId === 'sql') activateSqlTab(currentLayer(), itemId);
+  else activateDefTab(tabId, itemId);
+  scrollScreenToTop();
 }

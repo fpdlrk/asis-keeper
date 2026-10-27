@@ -42,6 +42,9 @@ const normalizeLineBreaks = text => String(text).replace(/\r\n/g, '\n');
 /** 배열의 마지막 값 */
 const lastOf = list => list[list.length - 1];
 
+/** 새 id (접두어 + 시간 + 임의 글자) — 블록 · 항목 · 표의 줄 */
+const newId = prefix => prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
 /** 두 경로(이름 배열)가 같은지 */
 const isSamePath = (a, b) => a.join('/') === b.join('/');
 

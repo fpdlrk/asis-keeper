@@ -3,9 +3,11 @@
 다른 환경에서 Claude(또는 다른 사람)가 이어서 작업할 때 읽는 문서입니다.
 프로젝트 자체의 구조·규칙은 **`README.md`가 원본**입니다. 이 문서는 **"지금까지 무엇을 왜 바꿨고, 무엇이 남았는지"** 만 다룹니다.
 
-- 작성 시점: 2026-10-26 (1차) · **2026-10-27 갱신 (2차)**
+- 작성 시점: 2026-10-26 (1차) · 2026-10-27 갱신 (2차) · **2026-10-27 갱신 (3차 — 원본/신규 구조 전환)**
 - 1차 작업(아래 1장): `82ccc06`, `0e041fa`로 커밋됨
-- 2차 작업(아래 2장): **아직 커밋하지 않은 워킹트리 상태** — 커밋은 사용자가 직접 합니다(Claude 는 커밋하지 않음)
+- 2차 작업(아래 2장): 사용자가 커밋함(`cc883c2`까지)
+- 3차 작업(아래 2-1장 ㉓): **아직 커밋하지 않은 워킹트리 상태** — 커밋은 사용자가 직접 합니다(Claude 는 커밋하지 않음)
+- ⚠ 3차에서 화면 구조가 크게 바뀌었습니다. 2장의 ⑪(기존 SQL 탭 · 신규 SQL 탭), ⑮(`items.json`), ⑳(잠긴 기존 SQL 칸 잠금 전환) 설명은 **㉓가 우선**합니다.
 - 실행: `index.html`을 **Chrome 또는 Edge로** 엽니다(더블클릭). 서버·빌드·설치 없음
 
 ---
@@ -387,6 +389,54 @@ grep -rn "지운이름" js/ index.html
 
 ---
 
+## 2-1. 3차 작업 (2026-10-27, 아직 커밋 안 함)
+
+### ㉓ 원본/신규 구조 전환 — 모든 탭의 모든 칸에 원본
+
+**배경(사용자 요청)**: 지금까지는 SQL 본문만 원본(ASIS)을 보관했는데, SQL 정의 · 파라미터 · 서비스 · 오브젝트 · 공통코드관리까지
+**모든 탭의 모든 요소가 원본을 가져야** 했음. 원본이 없는 완전 신규 항목도 있음. "바뀐 곳을 한눈에" 보는 것이 핵심.
+사용자와 정한 방식(전부 권장안으로):
+- 스위치로 원본/신규를 오가지 않고 **한 화면에서 신규를 고치며 원본과 다른 곳을 바로 표시** (문서의 변경 추적처럼)
+- 기존 SQL · 신규 SQL 두 탭 → **SQL 탭 하나** (신규 블록 왼쪽에 원본을 나란히 보던 방식은 그대로)
+- 바뀐 칸의 원본 값: 정의 칸은 **늘 칸 아래**, 표는 **마우스를 올렸을 때**
+- 지금 들어 있는 정의서 데이터는 **원본으로** 봄
+- 표의 줄은 **보이지 않는 줄 id**로 원본과 짝지음
+
+**단계 = 잠금** (`meta.asisLocked`, `js/screen-lock.js`)
+- 원본 단계(잠그기 전): 모든 탭이 원본을 고침. 저장 바 [등록] = 원본 임시 저장 (예전엔 기존 SQL 은 잠그기로만 저장됐음 → 이제 잠그기 전에도 저장 가능)
+- [원본 등록 후 잠그기] (`lockOriginal`): 바뀐 영역 등록 → 원본 SQL · 정의서 원본을 지금 모양으로 다시 저장 → **새로 넣은 원본을 신규로 복사**(`copyNewOriginalsToTobe`)
+  → `asisLockedIds` · `hashes` 기록 → 잠금 → **화면 전체 다시 그림**(`openScreen(path, true)`)
+  - 복사 규칙: 신규 쪽 어느 항목도 가리키지 않고, 지난번 잠글 때(`asisLockedIds`)에도 없던 원본만. 신규에서 지운 항목이 되살아나지 않게 하기 위함
+  - 예전에 잠근 적이 있으나 `asisLockedIds`가 없는 화면(이 기능 전): **SQL 은 복사하지 않음**(그때 '신규에 없는 원본 SQL' = 지운 쿼리였음). 정의서는 신규 파일이 없으므로 전부 복사
+- 신규 단계(잠근 뒤): 모든 탭이 신규를 고침. [잠금 풀기](`unlockAsis`)는 사유 필수 + 등록하지 않은 변경이 있으면 먼저 등록 → 원본 단계로 다시 그림
+- 예전의 `showAsisAsLocked/Unlocked`(DOM 을 부분적으로 바꾸던 방식)는 **없앰** — 단계가 바뀌면 다시 그리는 쪽이 단순하고 틀릴 곳이 적음
+
+**저장 구조**
+- SQL: 그대로 `meta.sqlBlocks.{asis,tobe}` + `asis/sql`, `tobe/sql`. 파라미터 줄 id `paramIds` 추가
+- 정의서: `<dir>/asis.json`(원본) · `<dir>/tobe.json`(신규). `DEF_TABS[탭].file` → `dir` 로 바꿈. 항목에 `asisId`(신규만) · `rowIds` 추가
+  - 읽기 `loadDefLayers(dir, tab, locked)`: 원본 = asis.json → 예전 items.json → 더 예전 파일 / 신규 = tobe.json → 없고 잠긴 화면이면 원본 복사
+- 원본 해시에 `<dir>/asis.json` 과 **meta.json 안의 원본 SQL 목록**(`META_HASH_TARGETS['meta.json#sqlBlocks.asis']` — SQL 정의 · 파라미터가 여기 있음) 추가.
+  `findChangedFiles`가 `#` 키는 meta.json 의 그 값을 다시 계산해 비교
+- 원본 항목의 이력은 잠글 때 신규 복사본으로 같이 넘어감. 잠긴 원본에는 이력 칸이 보이지 않음(해시 대상이라 바뀌면 안 됨)
+
+**표시** (`js/screen-changes.js`, 계산은 순수 함수만 모은 `js/layer-diff.js`)
+- 탭 줄: `markPillTab(..., state)` — 이름 뒤 '변경/신규' 글자, 오른쪽 요약 `#tabsSum-<bar>`(`renderTabStateSummary`)
+- '삭제됨' 탭: 신규 쪽에 없는 원본 항목. id 앞에 `GONE_TAB_PREFIX`('gone-'), × 없음, 본문은 `#gone-<tab>` · `#gone-tobe`에 읽기 전용으로 그림, [되살리기]
+- 칸 표시는 지금 보이는 항목만, 입력이 멈추면(150ms) 다시 계산(`scheduleChangeMarks` ← `refreshIndicators`)
+  - 정의 칸 `applyInfoMarks`, 이름 `applyTitleMark`, 표 `applyGridMarks`(바뀐 칸 `td.cell-chg` · 새 줄 `tr.row-add` · 삭제된 줄 목록 `[data-gone-rows]`)
+- 표의 줄 id: `gridRowHtml(..., rowId)` → `tr[data-rid]`, `readGridOf(table)` → `{rows, ids}`(예전 `readGridRowsOf` 대체), 되돌리기 스냅숏도 id 포함
+- 비교 탭: 신규 단계에서만. SQL 블록(정의·파라미터 변경 요약 추가) + 정의서 항목 목록(`defCompareHtml`) + 파일. 항목 이름 → `goToItem`
+- 보고서: 정의서는 잠긴 화면이면 신규를 원본과 비교(표 앞에 '구분' 열, 바뀐 칸은 '값 (원본: …)'), SQL 블록마다 정의 · 파라미터 표
+
+**화면 구조 변화**
+- `SCREEN_TABS`: `sql` · `cmp` · 정의서 3개 · `attach` (예전 `asis` · `tobe` 탭 없음). `SAVE_SECTIONS`의 `tobe` → `sql`
+- SQL 패널 안에 `.layer[data-layer=asis|tobe]` 두 개를 함께 그리고 단계에 맞는 쪽만 보임.
+  신규 단계의 원본 블록(`#blocks-asis`)은 숨긴 채 읽기 전용 — 나란히 보기 · 상태 · 표시가 여기서 원본 값을 읽음
+- 정의서는 지금 고치는 쪽만 그림. 원본은 `app.screen.asisDefItems[탭]`
+- 단계 안내 띠는 탭 위(`.phase`, `phaseBannerHtml`) — 모든 탭에서 보임
+
+---
+
 ## 3. 새로 생긴 전역 심볼 (이름 충돌 주의)
 
 ### 1차
@@ -437,6 +487,26 @@ grep -rn "지운이름" js/ index.html
 
 스크립트 순서(`index.html`): `ace-bundle.js` → **`ace-ext-language_tools.js`** → … → `sql.js` → **`sql-complete.js`** → … → `screen-blocks.js` → **`screen-sqltabs.js`** → …
 
+### 3차 (㉓)
+
+| 파일 | 새 전역 |
+|---|---|
+| `constants.js` | `LAYER_LABELS` `LEGACY_ROW_ID_PREFIX` `GONE_TAB_PREFIX` `META_HASH_TARGETS` `LEGACY_DEF_ITEMS_FILE` (`DEF_TABS[탭].file` → `.dir`) |
+| `utils.js` | `newId` |
+| `screen-data.js` | `metaHashBlob` `legacyRowIds` `rowIdsOf` `defLayerFile` `legacyDefItemsFile` `defDataFiles` `normalizeDefItem` `readDefFile` `copyDefItemAsTobe` `loadDefLayers` `storedDefItem` · **삭제**: `loadDefItems` |
+| `layer-diff.js` (신규) | `ITEM_STATE_LABELS` `comparableValue` `changedInfoKeys` `gridValueOf` `diffGridRows` `hasGridDiff` `diffDefItem` `diffSqlDefinition` `hasSqlDefinitionDiff` `goneAsisItems` `gridDiffSummary` |
+| `screen-changes.js` (신규) | `CHANGE_MARK_DELAY` `changeMarkTimer` `defItemStateOf` `pairedAsisSqlOf` `sqlBlockStateOf` `renderTabStateSummary` `goneTabEntry` `goneDefItems` `goneSqlBlocks` `goneHeadHtml` `renderGoneDefItems` `renderGoneSqlBlocks` `reviveDefItem` `reviveSqlBlock` `applyInfoMarks` `applyTitleMark` `applyGridMarks` `goneRowsHtml` `reviveGridRow` `scheduleChangeMarks` `refreshChangeMarks` `markActiveSqlBlock` `markActiveDefItem` |
+| `screen-lock.js` (신규) | `isLocked` `currentLayer` `phaseBannerHtml` `hasOriginalContent` `pairedAsisSqlIds` `copyNewOriginalsToTobe` `originalItemIds` `hashOriginal` `lockOriginal` · (옮겨 옴) `MIN_UNLOCK_REASON_LENGTH` `wasAsisUnlocked` `unlockLogBannerHtml` `closeLastUnlockEntry` `unlockAsis` `verifyIntegrity` |
+| `screen.js` | `readGridOf` `goToItem` · **삭제**: `readGridRowsOf` `lockedBannerHtml` `unlockedBannerHtml` (+ 위 셋은 screen-lock.js 로) |
+| `screen-defs.js` | `findDefItem` `defItemBodyHtml` `insertDefItem` |
+| `screen-sqltabs.js` | `pillStateText` `sqlTabElements` |
+| `screen-save.js` | `saveAsisBlocks` `saveSections` `pendingPathError` `saveDirtySections` · **삭제**: `LOCKED_SAVE_MESSAGE` `hashAsisFiles` `registerAsis` `setAsisEditorsReadOnly` `showAsisAsLocked` `showAsisAsUnlocked` |
+| `screen-blocks.js` | **삭제**: `setAsisDefinitionReadOnly` |
+| `diff.js` | `STATE_TAG_CLASS` `compareItemRowHtml` `defDiffDetail` `sqlDefinitionDiffDetail` `defCompareHtml` |
+| `report.js` | `reportInfoTableHtml` `reportGridTableHtml` `sqlDefinitionReportHtml` |
+
+새 클릭 속성(`handleScreenClick`): `data-revive-sql` `data-revive-def`(+`data-bid`) `data-revive-row`(+`data-rid`) `data-goto-tab`(+`data-bid`). `#saveAsis` → `lockOriginal`.
+
 ---
 
 ## 4. `meta.json` 스키마 변화 (모두 하위 호환)
@@ -472,7 +542,24 @@ grep -rn "지운이름" js/ index.html
 ```
 - 파일이 없으면 예전 파일을 '기본'(id `legacy`) 항목으로 옮겨 보여 줌 / `[]`이면 항목 없음(예전 파일을 다시 옮기지 않음)
 
+**3차(㉓)에서 더해진 것**
+
+```jsonc
+// meta.json
+{
+  "asisLockedIds": { "sql": ["b…"], "service": ["d…"], "object": [], "code": [] },   // 지난번 잠글 때의 원본 항목 id
+  "hashes": { "asis/sql/b1.sql": "…", "service/asis.json": "…", "meta.json#sqlBlocks.asis": "…" },
+  "sqlBlocks": { "asis": [{ "id": "b…", "info": {…}, "params": [[…]], "paramIds": ["r…"] }], "tobe": [ … 같은 모양 + asisId ] }
+}
+// <dir>/asis.json (원본) · <dir>/tobe.json (신규)
+[{ "id": "d…", "asisId": "d…(신규만, '' = 원본 없음)", "title": "…", "info": {…},
+   "grids": { "<표 키>": [["칸", …]] }, "rowIds": { "<표 키>": ["r…", "L0", …] }, "log": [ … ] }]
+```
+
 **없는 필드를 읽을 때의 규칙** — 예전 데이터를 깨뜨리지 않도록 반드시 유지:
+- `rowIds` · `paramIds` 없음(또는 줄 수와 다름) → 순서대로 `L0, L1 …` (`rowIdsOf`) — 원본과 신규가 같은 순서끼리 짝지어짐
+- `<dir>/asis.json` 없음 → 예전 `items.json`(더 예전 파일)을 원본으로 / `<dir>/tobe.json` 없음 → 잠긴 화면은 원본 복사, 아니면 빈 목록
+- `asisLockedIds` 없음 → 처음 잠그는 화면(전부 복사). 단 `asisSavedAt`이 있으면 예전에 잠갔던 화면 → SQL 은 복사 안 함
 - `asisUnlockLog` 없음 → 한 번도 잠금을 풀지 않은 화면
 - `asisId` 없음 → **같은 순서**로 짝 (`findPairedAsisBlock`)
 - `log` 없음 → 이력이 없는 SQL (이력이 비어 있으면 `log`를 아예 적지 않음)
@@ -480,6 +567,22 @@ grep -rn "지운이름" js/ index.html
 ---
 
 ## 5. 확인이 필요한 것 (브라우저에서 직접)
+
+### 3차 (㉓) — 아직 확인 안 함 (가장 먼저 볼 것)
+
+문법 · 전역 이름 충돌 · 정의되지 않은 함수 호출 검사, node 로 비교 계산 · 잠글 때 복사 · 해시 · 위변조 감지까지 확인했습니다. 화면은 **눌러 봐야 압니다.**
+
+- [ ] **원본 단계** — 새 화면: 안내 띠 · SQL/서비스/오브젝트/공통코드관리에 원본 입력 → [등록](원본 임시 저장, ●가 사라짐) → 다시 열어도 남는지
+- [ ] **잠그기** — [원본 등록 후 잠그기] → 화면이 신규 단계로 다시 그려지고, 모든 탭에 원본이 복사되어 있는지(● 없음, 상태 표시 없음 = 동일). 원본 일치 표시
+- [ ] **신규 단계 표시** — 정의 칸을 고치면 노랑 + '원본: 값', 표 칸을 고치면 노랑(마우스 올리면 원본), 줄 추가 초록, 줄 삭제 → 표 아래 '삭제된 줄 n' → [되살리기]
+- [ ] **항목 상태** — 탭 이름 뒤 '변경' · '신규'([+ 추가]로 만든 것), 항목 삭제 → '삭제됨' 탭(취소선) → 눌러서 읽기 전용 보기 → [되살리기], 탭 줄 오른쪽 요약
+- [ ] **SQL** — 신규 블록 왼쪽 원본 · 바뀐 줄 색칠, SQL 정의 · 파라미터 표시, 원본 선택을 바꾸면 '삭제됨' 탭이 바뀌는지, 삭제된 SQL 되살리기
+- [ ] **붙여넣기 · Ctrl+Z** — 표에 붙여넣은 뒤 되돌리기해도 '변경' 표시가 맞는지(줄 id 유지)
+- [ ] **잠금 풀기 → 다시 잠그기** — 등록 안 된 변경이 있을 때 먼저 등록하는지, 원본 단계로 바뀌는지, 원본에 항목을 새로 넣고 다시 잠그면 그것만 신규로 복사되는지(신규에서 지운 것은 안 돌아옴)
+- [ ] **예전 데이터** — 이미 잠긴 화면(2차까지의 데이터): 정의서 예전 items.json 이 원본으로, 신규는 복사본으로 열리는지(● 없음). 예전 SQL 은 그대로
+- [ ] **비교 탭** — 원본 단계 안내 / 신규 단계: SQL · 정의서 항목 목록 · 이름 눌러 이동
+- [ ] **보고서** — 정의서 '원본 대비' 표(구분 열, '값 (원본: …)'), SQL 정의 · 파라미터 표
+- [ ] **트리 검색 · 메뉴 복사** — 새 파일(asis.json/tobe.json)에서 찾는지, 복사한 화면이 원본 단계로 시작하는지
 
 ### 2차 — 아직 확인 안 함
 
@@ -529,6 +632,14 @@ grep -rn "지운이름" js/ index.html
 
 ## 6. 남은 일 / 논의할 것
 
+### 3차에서 생긴 것 (㉓)
+
+1. **원본 단계의 신규 데이터** — 원본 단계에서는 신규 쪽을 숨깁니다. 예전에 잠그지 않은 채 신규 SQL 을 넣어 둔 화면은 잠근 뒤에야 보입니다
+2. **예전에 잠근 화면의 정의서 원본** — 다음에 다시 잠글 때까지 원본 해시 대상이 아닙니다(그때 asis.json 이 만들어짐)
+3. **표가 아주 클 때** — 상태 계산이 입력마다 정의서 항목 전체를 비교합니다. 느려지면 상태 계산도 `scheduleChangeMarks`처럼 미루면 됨
+4. **원본 SQL 의 이름(제목)이 바뀐 것** — 탭 상태에는 '변경'으로 반영, 비교 탭에 '원본 이름'으로 표시. 블록 안에는 따로 표시하지 않음
+5. **예전 원본 파일(asis/files)** — 화면에서 올리지 않으므로 원본 단계에서도 추가할 곳이 없음(그대로 보관 · 해시만)
+
 ### 2차에서 생긴 것
 
 - **DB 전환 검토** — 로컬 폴더 버전 + 서버(DB) 버전을 프로젝트마다 골라 쓰는 방안(Spring / Supabase / PocketBase 등). 검토만 했고 코드 변경 없음 → **`DB_PLAN.md`** 참고
@@ -553,7 +664,17 @@ grep -rn "지운이름" js/ index.html
 
 ## 7. 변경된 파일
 
-### 2차 (아직 커밋 안 함)
+### 3차 (아직 커밋 안 함)
+
+```
+신규:  js/layer-diff.js, js/screen-changes.js, js/screen-lock.js
+수정:  index.html (스크립트 3개 · 문구), README.md, HANDOFF.md, css/app.css,
+       js/constants.js  js/utils.js  js/state.js  js/screen-data.js
+       js/screen.js  js/screen-blocks.js  js/screen-sqltabs.js  js/screen-defs.js(다시 씀)  js/screen-grid.js
+       js/screen-save.js(다시 씀)  js/diff.js  js/report.js  js/tree.js  js/dashboard.js(문구)
+```
+
+### 2차 (사용자가 커밋함)
 
 ```
 신규:  js/screen-sqltabs.js, js/screen-defs.js, js/screen-grid.js, js/sql-complete.js, js/vendor/ace-ext-language_tools.js

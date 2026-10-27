@@ -17,6 +17,8 @@
   --grid-focus-bg: #eaf3ff; --grid-focus-line: #9cc3f5; --grid-sel-bg: #dbe7f8;
   --pill-add-bg: #2579d5; --pill-add-hover: #1d66b6;   /* 탭 줄의 [+ … 추가] 단추 */
   --filled-bg: #eef5ff;   /* 내용이 들어 있는 정의 칸 */
+  /* 신규 단계의 원본 대비 표시 (screen-changes.js) — 원본과 다른 칸 / 새로 넣은 줄 배경 / 그 줄 왼쪽 선 */
+  --mark-chg-bg: #fff3c4; --mark-chg-line: #e3c461; --mark-add-bg: #e8f5ec; --mark-add-line: #3c9a62;
   --sans: "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
   --mono: D2Coding, Consolas, monospace;
   --r: 6px; --r-l: 8px;
@@ -217,6 +219,8 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .fld input[type=text]:focus, .inp:focus { border-color: var(--acc); outline: 0; box-shadow: 0 0 0 3px var(--acc-soft); }
 .inp.mono, .fld input.mono { font-family: var(--mono); font-size: 12px; }
 #warn .banner { margin: 14px 0 0; }
+/* 단계 안내 (원본 단계 / 신규 단계 — screen-lock.js) */
+.phase .banner { margin: 14px 0 0; }
 
 .stlog { list-style: none; margin: 0; padding: 0; }
 .stlog li { padding: 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
@@ -303,6 +307,19 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .sqltab-x:hover { background: var(--bad-bg); color: var(--bad); }
 .sqltab.on .sqltab-x { color: rgba(255, 255, 255, .7); }
 .sqltab.on .sqltab-x:hover { background: rgba(255, 255, 255, .16); color: #fff; }
+/* 원본 대비 상태 (신규 단계): 이름 뒤의 작은 글자 · 삭제된 원본 항목 탭은 취소선 */
+.sqltab-st { flex: none; margin-left: 5px; font-style: normal; font-size: 11px; font-weight: 700; }
+.sqltab-st:empty { display: none; }
+.sqltab[data-st="changed"] .sqltab-st { color: var(--warn); }
+.sqltab[data-st="new"] .sqltab-st { color: var(--ok); }
+.sqltab.gone { border-style: dashed; }
+.sqltab.gone .sqltab-t { text-decoration: line-through; color: var(--sub); }
+.sqltab.gone .sqltab-st { color: var(--bad); }
+.sqltab.on .sqltab-st, .sqltab.on.gone .sqltab-t { color: inherit; opacity: .9; }
+/* 탭 줄 오른쪽 요약: 변경 n · 신규 n · 삭제 n */
+.tabs-sum { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.tabs-sum:empty { display: none; }
+.st-changed { color: var(--warn); } .st-new { color: var(--ok); } .st-gone { color: var(--bad); }
 .sqltabs-tools { flex: none; display: flex; gap: 6px; }
 /* 탭 줄 오른쪽 [+ SQL 추가] · [+ 서비스 추가] 등 항목 추가 단추 */
 .btn.btn-pill-add { border-color: var(--pill-add-bg); background: var(--pill-add-bg); color: #fff; }
@@ -323,11 +340,27 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .infobox-f input[readonly], .infobox-f textarea[readonly], .infobox-f select:disabled { background: var(--soft); box-shadow: none; }
 /* 내용이 있는 칸은 연한 파란 배경 (잠긴 칸도 같음) — 빈 칸 판단은 placeholder 로 (screen.js infoFieldsHtml) */
 .infobox-f input:not(:placeholder-shown), .infobox-f textarea:not(:placeholder-shown) { background: var(--filled-bg); }
+/* 원본과 다른 정의 칸 · 이름칸 (신규 단계) — 칸 아래에 '원본: 값' */
+.infobox-f.info-chg input, .infobox-f.info-chg textarea, .infobox-f.info-chg select, .bt.info-chg { background: var(--mark-chg-bg); border-color: var(--mark-chg-line); }
+.info-orig { font-size: 11.5px; font-weight: 400; color: var(--sub); overflow-wrap: anywhere; }
 .infobox-f input.invalid { border-color: var(--bad); }   /* 날짜로 알아볼 수 없는 값 */
 .sqlparams { padding: 12px 12px 0; border-top: 1px solid var(--line); }
 .sqlparams .fld { margin-bottom: 12px; }
 /* 잠긴 기존 SQL: 파라미터 표의 행 추가 · 삭제 단추 숨김 */
-.blocks.locked .sqlparams [data-add], .blocks.locked .sqlparams [data-del] { visibility: hidden; }
+/* 고칠 수 없는 표(원본 · 삭제된 항목 보기): 줄 삭제 ✕ 숨김 ([+ 행 추가]는 그리지 않음) */
+.fld.readonly [data-del] { visibility: hidden; }
+/* 표 아래 '삭제된 줄 n' (신규 단계, 원본에만 있는 줄) */
+.gone-rows:empty { display: none; }
+.gone-rows-box summary { padding: 2px 0; font-size: 12px; font-weight: 600; color: var(--bad); cursor: pointer; }
+.gone-rows-t { width: 100%; margin-top: 4px; border-collapse: collapse; font-size: 12.5px; font-weight: 400; }
+.gone-rows-t th, .gone-rows-t td { padding: 4px 8px; border: 1px solid var(--line2); text-align: left; }
+.gone-rows-t th { background: var(--soft); color: var(--sub); }
+.gone-rows-t td { background: var(--bad-bg); color: var(--sub); text-decoration: line-through; }
+.gone-rows-t td:last-child { width: 92px; background: #fff; text-decoration: none; }
+/* 삭제된 원본 항목 보기 (읽기 전용) */
+.gone-item .gone-h { background: var(--bad-bg); }
+.gone-t { font-size: 14px; text-decoration: line-through; }
+.gone-sql { margin: 0; padding: 10px 12px; max-height: 360px; overflow: auto; border-bottom: 1px solid var(--line); background: var(--soft); font: 12px/1.6 var(--mono); white-space: pre-wrap; word-break: break-all; }
 .sqltabs-empty { margin-bottom: 10px; padding: 28px 16px; border: 1px dashed #c9ced5; border-radius: var(--r-l); color: var(--sub); text-align: center; font-size: 13px; }
 /* 마우스를 올리면 나타나는 복사 아이콘 — SQL 편집기 오른쪽 위, 제목칸 오른쪽 끝 */
 .copy-hover { position: absolute; z-index: 10; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center;
@@ -412,6 +445,10 @@ table.grid td:has(> input:focus), table.grid td:has(> select:focus) { background
 table.grid td:last-child { width: 40px; text-align: center; }
 table.grid .icon { width: 26px; height: 26px; border: 0; background: transparent; }
 /* 셀 범위 선택 (screen-grid.js) */
+/* 원본 대비 표시 (신규 단계): 바뀐 칸 · 새 줄 — 범위 선택 · 입력 중 색이 위에 오도록 그보다 먼저 둠 */
+table.grid tr.row-add > td { background: var(--mark-add-bg); }
+table.grid tr.row-add > td:first-child { box-shadow: inset 3px 0 0 var(--mark-add-line); }
+table.grid td.cell-chg { background: var(--mark-chg-bg); }
 table.grid td.cell-sel { background: var(--grid-sel-bg); }
 table.grid td.cell-sel:has(> input:focus), table.grid td.cell-sel:has(> select:focus) { background: var(--grid-focus-bg); }   /* 범위 안에서 커서가 있는 시작 칸은 입력 중 색으로 */
 body.grid-dragging, body.grid-dragging * { user-select: none; cursor: cell; }
@@ -447,6 +484,10 @@ table.grid input.invalid, table.grid input.invalid:focus { color: var(--bad); bo
 .cmp-sum .tag { padding: 4px 10px; border-radius: 14px; font-size: 12px; }
 .cmp h3 { margin: 22px 0 8px; font-size: 14px; color: var(--ink); }
 .cmp h3:first-child { margin-top: 0; }
+/* 비교 탭: 정의서 항목 목록 · 항목 이름(누르면 그 항목으로) */
+.cmp-items { list-style: none; margin: 0 0 8px; padding: 0; }
+.cmp-items li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line2); font-size: 13px; }
+.cmp-link { padding: 0; border: 0; background: none; color: var(--acc); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .cmp h3 .muted { font-weight: 400; font-size: 12px; margin-left: 6px; }
 .cmp .sbs { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1px solid var(--line); }
 .cmp .sbs th { border-bottom: 1px solid var(--line); background: var(--soft); padding: 6px 10px; text-align: left; font-size: 12px; color: var(--sub); }

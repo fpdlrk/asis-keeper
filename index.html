@@ -89,7 +89,7 @@
   <p class="hint">이 PC에 설치된 글꼴만 목록에 나타납니다. 인터넷 없이 시스템 글꼴로만 동작합니다.</p>
   <label class="f" for="fUi">화면 글꼴</label><select id="fUi" class="inp"></select>
   <label class="f" for="fCode">SQL 편집기 글꼴</label><select id="fCode" class="inp"></select>
-  <div class="fprev"><div id="fPrevUi">기존 SQL · 신규 SQL 등록 ✓ 0123456789 ABC abc</div><pre id="fPrevCode">SELECT EMP_NO, EMP_NM FROM EMP WHERE DEPT_CD = 'D100'; -- 사원 조회</pre></div>
+  <div class="fprev"><div id="fPrevUi">원본 SQL · 신규 SQL 등록 ✓ 0123456789 ABC abc</div><pre id="fPrevCode">SELECT EMP_NO, EMP_NM FROM EMP WHERE DEPT_CD = 'D100'; -- 사원 조회</pre></div>
   <div class="mbar"><button type="button" class="btn btn-s" id="fCancel">취소</button><button type="button" class="btn btn-s btn-primary" id="fOk">적용</button></div>
 </div></div>
 
@@ -104,8 +104,8 @@
 </div></div>
 
 <div id="diffModal" class="overlay" hidden><div class="mbox wide" role="dialog" aria-labelledby="dfTitle">
-  <h3 id="dfTitle">기존과 비교</h3>
-  <div class="dfhead"><label class="f" for="dfA" id="dfALabel">비교할 기존 SQL</label><select id="dfA" class="inp"></select><span class="hint" id="dfHint"></span><span class="sp"></span><label class="opt-check" title="띄어쓰기·들여쓰기·줄바꿈과 대소문자 차이는 변경으로 보지 않습니다."><input type="checkbox" data-ignore-format>공백·대소문자 무시</label></div>
+  <h3 id="dfTitle">원본과 비교</h3>
+  <div class="dfhead"><label class="f" for="dfA" id="dfALabel">비교할 원본 SQL</label><select id="dfA" class="inp"></select><span class="hint" id="dfHint"></span><span class="sp"></span><label class="opt-check" title="띄어쓰기·들여쓰기·줄바꿈과 대소문자 차이는 변경으로 보지 않습니다."><input type="checkbox" data-ignore-format>공백·대소문자 무시</label></div>
   <div class="dfbody cmp" id="dfBody"></div>
   <div class="mbar"><button type="button" class="btn btn-s" id="dfClose">닫기</button></div>
 </div></div>
@@ -125,10 +125,10 @@
 <!-- SQL 추가 창: 처음 추가할 때만 씁니다. 고치는 것은 SQL 탭 본문에서 (js/screen-sqltabs.js) -->
 <div id="sqlAddModal" class="overlay" hidden><div class="mbox mid" role="dialog" aria-labelledby="saTitle">
   <h3 id="saTitle">SQL 추가</h3>
-  <p class="hint">이름과 SQL은 꼭 입력해 주세요. 추가한 뒤 아래 저장 바의 [등록](기존 SQL은 ‘등록 후 잠그기’)을 눌러야 저장됩니다.</p>
+  <p class="hint">이름과 SQL은 꼭 입력해 주세요. 추가한 뒤 아래 저장 바의 [등록]을 눌러야 저장됩니다.</p>
   <label class="f" for="saName">이름 <em class="req">*</em></label>
   <input type="text" id="saName" class="inp" autocomplete="off" placeholder="예: 사원 목록 조회">
-  <div id="saPairRow"><label class="f" for="saPair">비교할 기존 SQL</label><select id="saPair" class="inp"></select></div>
+  <div id="saPairRow"><label class="f" for="saPair">비교할 원본 SQL</label><select id="saPair" class="inp"></select></div>
   <label class="f">SQL <em class="req">*</em></label>
   <div id="saSql" class="sa-sql"></div>
   <label class="f" for="saLog">이력 <span class="muted">(선택)</span></label>
@@ -147,6 +147,7 @@
 <script src="js/settings.js"></script>
 <script src="js/fs.js"></script>
 <script src="js/screen-data.js"></script>
+<script src="js/layer-diff.js"></script>
 <script src="js/sql.js"></script>
 <script src="js/sql-complete.js"></script>
 <script src="js/dialog.js"></script>
@@ -158,6 +159,8 @@
 <script src="js/screen-blocks.js"></script>
 <script src="js/screen-sqltabs.js"></script>
 <script src="js/screen-defs.js"></script>
+<script src="js/screen-changes.js"></script>
+<script src="js/screen-lock.js"></script>
 <script src="js/screen-grid.js"></script>
 <script src="js/screen-files.js"></script>
 <script src="js/screen-save.js"></script>

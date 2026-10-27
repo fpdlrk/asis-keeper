@@ -145,9 +145,9 @@ async function findIssues(screens, seq) {
     if (meta.asisLocked) {
       if ((await findChangedFiles(dir, meta.hashes, {stopAtFirst: true})).length) add('bad', '원본 변경', 'ASIS 원본이 등록 시점과 다릅니다');
     } else if (wasAsisUnlocked(meta)) {
-      add('bad', '잠금 해제 중', '기존 내용의 잠금이 풀려 있습니다. 수정을 마쳤으면 다시 등록해 잠가 주세요');
+      add('bad', '잠금 해제 중', '원본의 잠금이 풀려 있습니다. 수정을 마쳤으면 다시 잠가 주세요');
     } else if (statusIndex >= STATUS_DEV) {
-      add('warn', 'ASIS 없음', statusName + ' 상태인데 기존 내용이 등록되지 않았습니다');
+      add('warn', '원본 미등록', statusName + ' 상태인데 원본이 잠기지 않았습니다');
     }
     if (statusIndex >= STATUS_DEV) {
       const tobeBlocks = await loadSqlBlocks(dir, meta, 'tobe');

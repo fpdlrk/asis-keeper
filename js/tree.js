@@ -92,7 +92,7 @@ async function matchesSearch(dir, name, meta) {
   // 내용까지 찾을 파일: 메모 + 정의서(표 · 예전 글) + SQL 블록 (예전 구조 파일 포함)
   const files = [
     ...Object.values(TEXT_FIELD_FILES),
-    ...Object.values(DEF_TABS).map(def => def.file),
+    ...Object.keys(DEF_TABS).flatMap(defDataFiles),
     ...Object.values(LEGACY_DEF_FILES).flatMap(legacy => [legacy.grid, ...Object.values(legacy.texts)].filter(Boolean))
   ];
   const sqlBlocks = meta.sqlBlocks || {};
@@ -430,7 +430,8 @@ async function uniqueCopyName(destDir, baseName) {
 
 /**
  * 복사한 폴더(하위 포함) 안의 모든 화면에서 작업 기록을 지움 — 내용만 가져올 때 씀
- * 상태는 '요청'으로 돌리고, 상태 이력은 새로 시작하고, ASIS 잠금·해시·잠금 해제 이력·SQL 이력·정의서 항목 이력은 지웁니다.
+ * 상태는 '요청'으로 돌리고, 상태 이력은 새로 시작하고, 원본 잠금·해시·잠금 해제 이력·SQL 이력·정의서 항목 이력은 지웁니다.
+ * (잠금이 풀린 원본 단계로 시작 — 원본 · 신규 내용은 그대로)
  * (원본의 등록 기록이 복사본에도 남으면 현황 집계와 보고서가 같은 작업을 두 번 센 것처럼 보이기 때문)
  */
 async function resetCopiedWorkLog(dir) {
@@ -439,7 +440,7 @@ async function resetCopiedWorkLog(dir) {
     const now = new Date();
     const cleaned = {...meta, status: STATUS_LIST[0], createdAt: now.toLocaleString('ko-KR'),
       statusLog: [{status: STATUS_LIST[0], at: now.toISOString()}]};
-    for (const key of ['asisLocked', 'asisSavedAt', 'hashes', 'asisUnlockLog']) delete cleaned[key];
+    for (const key of ['asisLocked', 'asisSavedAt', 'asisLockedIds', 'hashes', 'asisUnlockLog']) delete cleaned[key];
     // SQL 마다 쌓은 이력도 작업 기록이므로 지움 (SQL 내용·이름·짝은 그대로)
     if (cleaned.sqlBlocks) {
       cleaned.sqlBlocks = Object.fromEntries(Object.entries(cleaned.sqlBlocks)
@@ -447,9 +448,9 @@ async function resetCopiedWorkLog(dir) {
     }
     await writeJson(dir, 'meta.json', cleaned);
     // 정의서 항목마다 쌓은 이력도 지움 (이름·표는 그대로)
-    for (const def of Object.values(DEF_TABS)) {
-      const items = await readJson(dir, def.file, null);
-      if (Array.isArray(items)) await writeJson(dir, def.file, items.map(({log, ...rest}) => rest));
+    for (const path of Object.keys(DEF_TABS).flatMap(defDataFiles)) {
+      const items = await readJson(dir, path, null);
+      if (Array.isArray(items)) await writeJson(dir, path, items.map(({log, ...rest}) => rest));
     }
   }
   for (const name of await listChildFolders(dir)) await resetCopiedWorkLog(await dir.getDirectoryHandle(name));

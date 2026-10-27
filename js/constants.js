@@ -30,6 +30,26 @@ const FILE_DIRS = {asis: 'asis/files', tobe: 'tobe/files', attach: 'attach'};
 /* 신규 SQL 을 덮어쓸 때 이전 버전을 남기는 폴더 */
 const TOBE_HISTORY_DIR = 'tobe/history';
 
+/* ---- 원본(asis) / 신규(tobe) ----
+   화면마다 잠금이 하나 있습니다(meta.asisLocked).
+     잠그기 전 = 원본 단계: 모든 탭(SQL · 서비스 · 오브젝트 · 공통코드관리)에 원본을 입력
+     잠근 뒤   = 신규 단계: 모든 탭에서 신규를 고치고, 원본과 다른 곳을 표시 (screen-changes.js)
+   잠글 때 아직 신규 쪽에 없는 원본 항목은 신규 쪽으로 복사합니다 (screen-lock.js). */
+const LAYER_LABELS = {asis: '원본', tobe: '신규'};
+
+/* 신규 항목이 가리키는 원본 항목 (SQL 블록 · 정의서 항목의 asisId)
+   표의 줄은 줄 id(rowIds)로 짝짓습니다 — 원본을 복사한 줄은 같은 id, 새로 넣은 줄은 새 id.
+   줄 id 가 없는 예전 데이터는 순서대로 'L0', 'L1' … 을 붙여 같은 순서끼리 짝짓습니다. */
+const LEGACY_ROW_ID_PREFIX = 'L';
+
+/* 알약 탭 줄에서 '삭제됨'(원본에만 있는 항목) 탭의 id 접두어 — 실제 항목 id 앞에 붙임 */
+const GONE_TAB_PREFIX = 'gone-';
+
+/* 원본 확인(해시)에 넣는 meta.json 안의 값 — 파일이 아니라 meta.json 의 일부라 이름에 # 을 붙여 구분 (screen-data.js findChangedFiles) */
+const META_HASH_TARGETS = {
+  'meta.json#sqlBlocks.asis': meta => (meta.sqlBlocks && meta.sqlBlocks.asis) || []
+};
+
 /* 신규 SQL 블록의 '비교할 기존 SQL' 지정 (meta.sqlBlocks.tobe[].asisId)
      '<기존 블록 id>' = 그 블록과 비교   '' = 짝 없음(신규 쿼리)
    값이 아예 없으면 예전 데이터 → 같은 순서의 기존 블록과 비교 (screen-data.js findPairedAsisBlock) */
@@ -42,21 +62,23 @@ const TEXT_FIELD_FILES = {
 
 /* ---- 정의서 탭 (서비스 · 오브젝트 · 공통코드관리) — screen-defs.js ----
    탭 안에서 항목(예: 서비스 하나)마다 알약 탭을 만들고, 항목 본문에 [정의 칸] + 표 여러 개 + 이력을 둡니다.
-   저장: <file> = [{id, title, info?: {칸 key: 값}, grids: {표 키: [[칸, …], …]}, log?: [{at, by, text}]}]
+   저장: <dir>/asis.json(원본) · <dir>/tobe.json(신규)
+     = [{id, asisId?(신규만), title, info?: {칸 key: 값}, grids: {표 키: [[칸, …], …]}, rowIds: {표 키: [줄 id, …]}, log?: [{at, by, text}]}]
+     예전 <dir>/items.json 은 원본으로 읽습니다 (screen-data.js loadDefLayers)
    info : 정의 칸 목록(SQL_INFO_FIELDS 와 같은 형식) — 있는 탭만
    grids: [표 키, 화면에 보일 이름] — 표의 열은 GRID_COLUMNS['<탭>.<표 키>']
    ※ 공통코드관리 탭의 키는 예전 이름 그대로 'code' (저장 폴더 code/ 와 맞춤) */
 const DEF_TABS = {
   // 서비스 표의 키는 예전 이름 그대로 (overview = 메세지정의, attrs = 기능정의, funcs = 권한제어) — 저장된 데이터와 맞추기 위함. preprocess = 전처리
-  service: {label: '서비스', file: 'service/items.json', info: [
+  service: {label: '서비스', dir: 'service', info: [
     {key: 'transactionName', label: '트랜잭션명'},
     {key: 'commandClass', label: '커멘드클래스명'},
     {key: 'twoPcYn', label: '2PC지원여부'},
     {key: 'logYn', label: '로그사용여부'},
     {key: 'remark', label: '비고', wide: true}
   ], grids: [['overview', '메세지정의'], ['attrs', '기능정의'], ['funcs', '권한제어(사용자 그룹)'], ['preprocess', '전처리']]},
-  object: {label: '오브젝트', file: 'object/items.json', grids: [['overview', '개요'], ['attrs', '속성'], ['children', '하위 오브젝트']]},
-  code: {label: '공통코드관리', file: 'code/items.json', info: [
+  object: {label: '오브젝트', dir: 'object', grids: [['overview', '개요'], ['attrs', '속성'], ['children', '하위 오브젝트']]},
+  code: {label: '공통코드관리', dir: 'code', info: [
     {key: 'codeGroup', label: '코드분류'},
     {key: 'codeGroupName', label: '코드분류명'},
     {key: 'startDate', label: '시작일', type: 'date'},
@@ -101,13 +123,15 @@ const SQL_INFO_FIELDS = [
   {key: 'comment', label: '커맨트', multiline: true, wide: true}
 ];
 
-/* 표로 바꾸기 전의 정의서 파일 — <탭>/items.json 이 없을 때 이 내용을 '기본' 항목 하나로 옮겨 보여 줍니다(screen-data.js loadDefItems).
+/* 표로 바꾸기 전의 정의서 파일 — <탭>/items.json 이 없을 때 이 내용을 '기본' 항목 하나로 옮겨 보여 줍니다(screen-data.js loadDefLayers — 원본으로).
    글은 줄·칸으로 나눠 표에 넣습니다(붙여넣기와 같은 규칙). 예전 파일은 지우지 않습니다. */
 const LEGACY_DEF_FILES = {
   service: {grid: null, texts: {overview: 'service/overview.md', attrs: 'service/attributes.md', funcs: 'service/functions.md'}},
   object: {grid: 'object/overview.json', texts: {attrs: 'object/attributes.md', children: 'object/children.md'}},
   code: {grid: 'code/overview.json', texts: {common: 'code/common.md', system: 'code/system.md'}}
 };
+/* 원본/신규로 나누기 전의 정의서 파일 이름 (<dir>/items.json) — 원본으로 읽음 */
+const LEGACY_DEF_ITEMS_FILE = 'items.json';
 /* 예전 내용을 옮겨 만든 항목의 id·이름 */
 const LEGACY_DEF_ITEM = {id: 'legacy', title: '기본'};
 

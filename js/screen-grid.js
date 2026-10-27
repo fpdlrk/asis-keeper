@@ -437,8 +437,8 @@ function handleGridPaste(e) {
 /* 표마다 기억해 둘 되돌리기 개수 */
 const MAX_GRID_PASTE_UNDO = 20;
 
-/** 표의 지금 모습 (빈 줄 포함, 모든 칸 값) */
-const gridSnapshot = body => [...body.rows].map(row => [...row.querySelectorAll(GRID_CELL_SELECTOR)].map(cell => cell.value));
+/** 표의 지금 모습 (빈 줄 포함, 줄 id + 모든 칸 값) — 되돌려도 줄 id 가 그대로여야 원본과의 짝이 유지됨 */
+const gridSnapshot = body => [...body.rows].map(row => ({id: row.dataset.rid, cells: [...row.querySelectorAll(GRID_CELL_SELECTOR)].map(cell => cell.value)}));
 
 /** 이 표의 되돌리기·다시 실행 기록 (없으면 빈 기록을 만듦) */
 function gridPasteHistoryOf(tableId) {
@@ -463,7 +463,7 @@ function clearGridPasteUndo(tableId) {
 function restoreGridSnapshot(table, {rows, row, col}) {
   clearGridSelection();
   const body = table.tBodies[0];
-  body.innerHTML = rows.map(cells => gridRowHtml(table.dataset.cols, cells)).join('');
+  body.innerHTML = rows.map(({id, cells}) => gridRowHtml(table.dataset.cols, cells, false, id)).join('');
   const cell = gridCellInput(table, {row, col});
   if (cell) cell.focus();
   refreshIndicators();

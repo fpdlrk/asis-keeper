@@ -27,15 +27,15 @@ function phaseBannerHtml(meta, tab) {
   const lock = tabLocksOf(meta)[tab];
   const label = layerTabLabel(tab);
   if (lock.locked) {
-    return `<div class="banner lock">${ICON.lock}<b>${label} 원본 잠김 · 신규 작업 중</b>`
+    return `<div class="banner note">${ICON.info}<b>${label} 원본 잠김 · 신규 작업 중</b>`
       + `<span class="muted">${escapeHtml(lock.savedAt)} 등록. 원본과 다른 곳은 색으로 표시됩니다.</span><span class="sp"></span>`
       + `<button type="button" class="btn btn-s" data-unlock-tab="${tab}" title="사유를 남기면 이 탭의 원본을 다시 고칠 수 있습니다">${ICON.unlock}잠금 풀기</button></div>`;
   }
   const reopened = lock.unlockLog.length > 0;
   const head = reopened
-    ? `${ICON.unlock}<b>잠금이 풀려 있습니다 · ${label} 원본 수정 중</b><span class="muted">원본을 고친 뒤 다시 잠가 주세요. 신규 작업 내용은 그대로 보관되어 있습니다.</span>`
-    : `${ICON.warn}<b>${label} 원본 단계</b><span class="muted">이 탭에 원본을 넣고 잠그세요. 잠근 뒤부터 이 탭은 신규 작업을 합니다.</span>`;
-  return `<div class="banner info">${head}<span class="sp"></span><button type="button" class="btn btn-s btn-primary" data-lock-tab="${tab}">`
+    ? `${ICON.info}<b>잠금이 풀려 있습니다 · ${label} 원본 수정 중</b><span class="muted">원본을 고친 뒤 다시 잠가 주세요. 신규 작업 내용은 그대로 보관되어 있습니다.</span>`
+    : `${ICON.info}<b>${label} 원본 단계</b><span class="muted">이 탭에 원본을 넣고 잠그세요. 잠근 뒤부터 이 탭은 신규 작업을 합니다.</span>`;
+  return `<div class="banner note">${head}<span class="sp"></span><button type="button" class="btn btn-s btn-primary" data-lock-tab="${tab}">`
     + `${reopened ? '고친 원본 다시 잠그기' : '원본 등록 후 잠그기'}</button></div>`;
 }
 

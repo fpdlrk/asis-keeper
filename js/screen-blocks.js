@@ -195,16 +195,14 @@ function sqlBlockHtml(kind, block, locked) {
   const rollback = (block.rbText || '').trim()
     ? `<div class="blk-sub">롤백 SQL <span class="muted">이전에 입력한 내용입니다. 비우고 등록하면 이 칸은 사라집니다.</span></div><div class="ed" data-id="${editorId('rollback', block.id)}"></div>`
     : '';
-  // '비교할 기존 SQL' 선택 상자는 블록 머리에 둡니다 — 왼쪽 칸은 '없음'일 때 숨겨지므로 그 안에 두면 다시 고를 수 없습니다
+  // 비교할 원본은 ⋯ 메뉴의 '비교할 원본 바꾸기'로 고릅니다 (잠글 때 복사된 블록은 자동으로 짝이 되어 평소엔 고칠 일이 없음)
   return `<div class="blk" data-id="${block.id}">
     <div class="blk-h">${blockTitleHtml(block, false, true)}<span class="chg" data-chg="${block.id}"></span><span class="sp"></span>
-      <label class="pair-pick">원본<select class="pair-sel" data-pair-sel="${block.id}" aria-label="비교할 원본 SQL 블록"></select></label>
-      <button type="button" class="btn btn-s" data-from="${block.id}">원본 SQL 가져오기</button>
-      <button type="button" class="icon" data-menu="tobe" data-bid="${block.id}" aria-label="블록 메뉴 (원본과 비교, 삭제)">⋯</button></div>
+      <button type="button" class="icon" data-menu="tobe" data-bid="${block.id}" aria-label="블록 메뉴 (원본과 비교, 비교할 원본 바꾸기, 삭제)">⋯</button></div>
     ${sqlInfoHtml(block, false)}
     <div class="blk-b">
       <div class="pane pane-l"><div class="pane-h">${ICON.lock}원본 · 읽기 전용<span class="pair-t" data-pair-t="${block.id}"></span></div>
-        <div class="ed" data-id="${editorId('pair', block.id)}"></div><div class="pair-none" data-pair-none="${block.id}" hidden>고른 원본 SQL 블록이 없어졌습니다. 블록 머리에서 다시 골라 주세요.</div></div>
+        <div class="ed" data-id="${editorId('pair', block.id)}"></div><div class="pair-none" data-pair-none="${block.id}" hidden>고른 원본 SQL 블록이 없어졌습니다. ⋯ 메뉴의 ‘비교할 원본 바꾸기’로 다시 골라 주세요.</div></div>
       <div class="pane pane-r"><div class="pane-h acc">신규 (편집)</div><div class="ed" data-id="${editorId('tobe', block.id)}"></div></div>
     </div>
     ${rollback}
@@ -359,65 +357,38 @@ async function copyInputText(button) {
   toast('복사했습니다.');
 }
 
-/** [기존 SQL 가져오기]: 이 블록에 연결한 기존 블록의 SQL 을 신규 블록에 복사 */
-async function importAsisSql(tobeBlockId) {
-  const tobeBlocks = readBlockInputs('tobe');
-  const order = tobeBlocks.findIndex(block => block.id === tobeBlockId);
-  const asisBlock = findPairedAsisBlock(tobeBlocks[order], order, readBlockInputs('asis'));
-  if (!asisBlock) return toast('가져올 원본 SQL 블록이 없습니다. 블록 머리의 ‘원본’에서 비교할 블록을 먼저 고르세요.');
-  if (!asisBlock.sql.trim()) return toast('가져올 원본 SQL이 없습니다.');
-  const tobeId = editorId('tobe', tobeBlockId);
-  if (getEditorValue(tobeId).trim()) {
-    const ok = await askConfirm({title: '원본 SQL 가져오기', desc: '지금 입력한 신규 SQL이 원본 SQL로 바뀝니다. 계속할까요?', okText: '가져오기'});
-    if (!ok) return;
-  }
-  app.screen.editors[tobeId].setValue(asisBlock.sql, -1);
-  toast('원본 SQL을 가져왔습니다. 수정한 뒤 등록하세요.');
-}
-
 /* ======================= 기존과 나란히 보기 ======================= */
 
-/* '비교할 기존 SQL' 선택 상자에서 '짝 없음'을 나타내는 값 (빈 값은 select 에서 다루기 번거로워 따로 둠) */
+/* [+ SQL 추가] 창의 '비교할 원본 SQL' 선택 상자에서 '짝 없음'을 나타내는 값 (빈 값은 select 에서 다루기 번거로워 따로 둠) */
 const PAIR_SELECT_NONE = '__none__';
-/* 예전 데이터(지정이 없어 같은 순서로 짝지은 상태)를 나타내는 값 */
-const PAIR_SELECT_AUTO = '__auto__';
 
 /**
- * '비교할 기존 SQL' 선택 상자 채우기
- * @param {HTMLSelectElement} select 선택 상자
- * @param {object} tobeBlock 신규 블록 (asisId 를 봄)
- * @param {number} order 신규 블록 순서
- * @param {object[]} asisBlocks 기존 블록 목록
- * @param {object|null} pairedBlock 지금 짝지어진 기존 블록
+ * ⋯ 메뉴 '비교할 원본 바꾸기': 원본 SQL 목록 + '없음 (신규 쿼리)' 을 메뉴로 보여 주고 고르면 짝을 바꿈
+ * 지금 짝에는 ✓, 아직 지정하지 않은 예전 데이터(같은 순서로 짝지음)는 그 항목에 '자동(순서)' 꼬리말
+ * @param {HTMLElement} button 메뉴를 띄울 기준 단추 (블록의 ⋯)
  */
-function fillPairSelect(select, tobeBlock, order, asisBlocks, pairedBlock) {
-  if (!select) return;
-  const options = asisBlocks.map((block, i) => `<option value="${escapeHtml(block.id)}">${i + 1}. ${escapeHtml(block.title)}</option>`);
-  options.push(`<option value="${PAIR_SELECT_NONE}">없음 (신규 쿼리)</option>`);
-  // 아직 지정하지 않은 예전 데이터는 지금 짝을 '자동(순서)'로 보여 주고, 고르면 그때 확정됩니다
-  if (tobeBlock.asisId === undefined) {
-    const autoLabel = pairedBlock ? `자동(순서) · ${pairedBlock.title}` : '자동(순서) · 짝 없음';
-    options.unshift(`<option value="${PAIR_SELECT_AUTO}">${escapeHtml(autoLabel)}</option>`);
-  }
-  const value = tobeBlock.asisId === undefined
-    ? PAIR_SELECT_AUTO
-    : (pairedBlock ? pairedBlock.id : PAIR_SELECT_NONE);
-  const html = options.join('');
-  if (select.innerHTML !== html) select.innerHTML = html;
-  select.value = value;
-  select.classList.toggle('none', !pairedBlock);
-  select.title = pairedBlock ? '비교 중: ' + pairedBlock.title : '비교할 원본 SQL 을 고르면 왼쪽에 나란히 보입니다';
+function showPairMenu(button, tobeBlockId) {
+  const tobeInputs = readBlockInputs('tobe');
+  const order = tobeInputs.findIndex(block => block.id === tobeBlockId);
+  if (order < 0) return;
+  const asisInputs = readBlockInputs('asis');
+  const paired = findPairedAsisBlock(tobeInputs[order], order, asisInputs);
+  const auto = tobeInputs[order].asisId === undefined ? '자동(순서)' : '';
+  const items = asisInputs.map((block, i) => [`${i + 1}. ${block.title}`, () => setTobePair(tobeBlockId, block.id), '',
+    paired && paired.id === block.id ? MENU_ICON.check : '', paired && paired.id === block.id ? auto : '']);
+  items.push('-', ['없음 (신규 쿼리)', () => setTobePair(tobeBlockId, NO_ASIS_PAIR), '', paired ? '' : MENU_ICON.check, paired ? '' : auto]);
+  showMenuBelow(button, items);
 }
 
 /**
- * '비교할 기존 SQL' 을 바꿨을 때 — 신규 블록에 연결 정보를 적고 다시 그림
+ * 비교할 원본을 바꿨을 때 — 신규 블록에 연결 정보를 적고 다시 그림
  * @param {string} tobeBlockId 신규 블록 id
- * @param {string} selectedValue 선택 상자 값 (기존 블록 id | PAIR_SELECT_NONE | PAIR_SELECT_AUTO)
+ * @param {string} asisId 원본 블록 id, 짝 없음(신규 쿼리)이면 NO_ASIS_PAIR
  */
-function setTobePair(tobeBlockId, selectedValue) {
+function setTobePair(tobeBlockId, asisId) {
   const block = findSqlBlock('tobe', tobeBlockId);
-  if (!block || selectedValue === PAIR_SELECT_AUTO) return;   // '자동(순서)'는 고를 수 없고 표시만 함
-  block.asisId = selectedValue === PAIR_SELECT_NONE ? NO_ASIS_PAIR : selectedValue;
+  if (!block) return;
+  block.asisId = asisId;
   refreshPairedBlocks();
   renderSqlTabs('tobe');   // 짝이 바뀌면 '삭제됨'(어느 신규와도 짝이 아닌 원본) 탭도 바뀜
   refreshIndicators();
@@ -435,7 +406,6 @@ function refreshPairedBlocks() {
     if (!pairEditor) return;
     const asisBlock = findPairedAsisBlock(tobeBlock, order, asisBlocks);
     const element = tobeBlock.element;
-    fillPairSelect(element.querySelector('[data-pair-sel]'), tobeBlock, order, asisBlocks, asisBlock);
     element.querySelector('[data-pair-t]').textContent = asisBlock ? ' · ' + asisBlock.title : '';
     // 고른 블록이 없어진 경우에만 안내를 띄웁니다 ('없음'을 고른 경우는 왼쪽 칸 자체를 숨김)
     const lostPair = !asisBlock && !!tobeBlock.asisId;
@@ -506,16 +476,20 @@ function markChangedLines(blockId) {
   badge.className = 'chg ' + (count ? 'warn' : '');
 }
 
-/**
- * 나란히 보기: 기존(왼쪽) · 신규(오른쪽) 편집기 스크롤을 함께 움직임 (세로·가로)
- * 사용자가 휠·클릭·키보드로 조작한 쪽("앞장선 쪽")만 상대를 따라오게 합니다.
- * 줄 수가 달라 짧은 쪽이 끝에서 멈출 때, 그 멈춤이 긴 쪽을 끌어당기지 않도록 하기 위해서입니다.
- */
+/** 나란히 보기: 블록의 원본(왼쪽) · 신규(오른쪽) 편집기 스크롤을 함께 움직임 */
 function linkPairScroll(blockId) {
   const screen = app.screen;
   const left = screen.editors[editorId('pair', blockId)];
   const right = screen.editors[editorId('tobe', blockId)];
-  if (!left || !right) return;
+  if (left && right) linkScrollTogether(left, right);
+}
+
+/**
+ * 나란히 놓인 두 Ace 편집기의 스크롤을 함께 움직임 (세로·가로) — SQL 블록 · 소스 비교 창이 함께 씀
+ * 사용자가 휠·클릭·키보드로 조작한 쪽("앞장선 쪽")만 상대를 따라오게 합니다.
+ * 줄 수가 달라 짧은 쪽이 끝에서 멈출 때, 그 멈춤이 긴 쪽을 끌어당기지 않도록 하기 위해서입니다.
+ */
+function linkScrollTogether(left, right) {
   let leader = null, leaderUntil = 0;
   const takeLead = editor => { leader = editor; leaderUntil = Date.now() + SCROLL_LEADER_HOLD; };
   const isLeader = editor => leader === editor && Date.now() < leaderUntil;

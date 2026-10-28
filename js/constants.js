@@ -16,6 +16,13 @@ const STATUS_DEV = 2;           // '개발' 의 번호 ('개발 이상' 판단�
 /* 예전 버전에서 쓰던 상태 이름 → 지금 이름 */
 const LEGACY_STATUS_NAMES = {'작업중': '진행', '개발배포': '개발', '운영배포': '운영', '테스트': '진행', '배포완료': '운영'};
 
+/* ---- 티켓번호 ----
+   화면(메뉴)을 만들 때 자동으로 붙는 6자리 일련번호 000001 ~ 999999. 프로젝트(루트)마다 하나씩 올라가고 겹치지 않습니다.
+   화면에서는 고칠 수 없습니다. (screen-data.js openTicketSequence · nextTicket — 티켓이 없는 예전 화면은 열 때 붙임) */
+const TICKET_DIGITS = 6;
+/* 마지막으로 낸 번호를 기억하는 루트의 파일 — 화면을 지워도 그 번호를 다시 쓰지 않기 위함 */
+const TICKET_SEQ_FILE = '.ticket-seq.json';
+
 /* ---- 화면(메뉴) 폴더 규칙 ---- */
 /* 화면 폴더 안에서 데이터를 담는 하위 폴더 이름. 메뉴 이름으로 쓸 수 없고, 트리에도 나오지 않습니다. */
 const RESERVED_FOLDER_NAMES = ['asis', 'tobe', 'attach', 'service', 'object', 'code'];
@@ -75,36 +82,48 @@ const DEF_TABS = {
     {key: 'commandClass', label: '커멘드클래스명'},
     {key: 'twoPcYn', label: '2PC지원여부'},
     {key: 'logYn', label: '로그사용여부'},
-    {key: 'remark', label: '비고', wide: true}
+    {key: 'remark', label: '비고'}
   ], grids: [['overview', '메세지정의'], ['attrs', '기능정의'], ['funcs', '권한제어(사용자 그룹)'], ['preprocess', '전처리']]},
-  object: {label: '오브젝트', dir: 'object', grids: [['overview', '개요'], ['attrs', '속성'], ['children', '하위 오브젝트']]},
+  // 정의 칸 key 는 예전 이름 그대로(저장된 값과 맞추기 위함). '이름'(name)은 항목 이름과 겹쳐 뺌
+  object: {label: '오브젝트', dir: 'object', info: [
+    {key: 'displayName', label: '화면표시명'},
+    {key: 'type', label: '오브젝트 유형'},
+    {key: 'link', label: '오브젝트 링크'},
+    {key: 'height', label: '높이', width: '100px'},
+    {key: 'width', label: '너비', width: '100px'},
+    {key: 'remark', label: '비고'}
+  ], grids: [['attrs', '오브젝트 속성'], ['children', '하위 오브젝트']]},
   code: {label: '공통코드관리', dir: 'code', info: [
     {key: 'codeGroup', label: '코드분류'},
     {key: 'codeGroupName', label: '코드분류명'},
     {key: 'startDate', label: '시작일', type: 'date'},
     {key: 'endDate', label: '종료일', type: 'date'},
     {key: 'dataChangeYn', label: '자료변경여부'},
-    {key: 'remark', label: '비고', multiline: true, wide: true}
+    {key: 'remark', label: '비고'}
   ], grids: [['common', '공통코드'], ['system', '시스템코드관리']]}
 };
 
-/* 예전 '개요' 표(첫 줄)를 정의 칸으로 옮길 때의 순서 — 공통코드관리의 개요 표 [코드분류, 코드분류명, 시작일, 종료일] 가 정의 칸이 됨
+/* 예전 '개요' 표(첫 줄)를 정의 칸으로 옮길 때의 순서 — 공통코드관리 · 오브젝트의 개요 표가 정의 칸이 됨
    (screen-data.js overviewRowToInfo) */
-const LEGACY_OVERVIEW_INFO = {code: ['codeGroup', 'codeGroupName', 'startDate', 'endDate']};
+const LEGACY_OVERVIEW_INFO = {
+  code: ['codeGroup', 'codeGroupName', 'startDate', 'endDate'],
+  object: ['name', 'displayName', 'link', 'type', 'height', 'width']   // 오브젝트 개요 표 [이름, 화면표시명, 링크, 유형, 높이, 넓이]
+};
 
 /* 표의 열 이름과 입력 종류 — 키: '<정의서 탭>.<표 키>'
    types: 열 번호 → 'date'(날짜 글 입력칸) | 'select'(고르는 칸)
+   widths: 열 번호 → 열 너비(CSS 값). 있으면 그 열만 그 너비이고, 너비를 안 준 열이 남은 폭을 나눠 가짐 (screen.js gridHtml)
    options: 열 번호 → 고르는 값 목록 (첫 값이 기본값 — 새 줄 · 지운 칸 · 목록에 없는 값은 기본값)
-   ※ object.overview · code.common · service 표 세 개를 뺀 나머지 열은 임시안입니다. 항목이 확정되면 여기만 고치면 됩니다.
+   ※ code.system 의 열은 아직 임시안입니다 (나머지는 사용자가 정한 항목). 항목이 확정되면 여기만 고치면 됩니다.
      열을 바꿔도 저장된 값은 열 순서대로 들어가므로, 열 순서를 바꿀 때는 기존 데이터를 확인하세요. */
 const GRID_COLUMNS = {
   'service.overview': {cols: ['속성타입', '값타입', '트랜잭션 속성명', '기본값', '비고'], types: {}},
   'service.attrs': {cols: ['기능구분', '기능명', '적용순서', '요청메세지 이름', '응답메세지 이름', '결과트리반환'], types: {}},
   'service.funcs': {cols: ['사용자그룹ID', '사용자그룹명', '적용여부'], types: {2: 'select'}, options: {2: ['미적용', '적용']}},
   'service.preprocess': {cols: ['옵션명', '값', '비고'], types: {}},
-  'object.overview': {cols: ['이름', '화면표시명', '링크', '유형', '높이', '넓이'], types: {}},
-  'object.attrs': {cols: ['속성명', '값', '설명'], types: {}},
-  'object.children': {cols: ['이름', '화면표시명', '유형', '설명'], types: {}},
+  // 속성구분코드 · 속성이름은 같은 너비로 나눌 때(약 33%)의 절반, 남은 폭은 속성값
+  'object.attrs': {cols: ['속성구분코드', '속성이름', '속성값'], types: {}, widths: {0: '16.5%', 1: '16.5%'}},
+  'object.children': {cols: ['순서', '자식오브젝트명', '자식오브젝트 출력명'], types: {}, widths: {0: '100px'}},
   'code.common': {cols: ['순번', '코드', '코드명', '시작일', '종료일', '주코드', '시스템코드', '참조코드', '어휘코드', '코드약명', '외국어명', '비고'],
     types: {3: 'date', 4: 'date'}},
   'code.system': {cols: ['코드분류', '코드', '코드명', '정렬순서', '사용여부'], types: {}},
@@ -113,14 +132,15 @@ const GRID_COLUMNS = {
 };
 
 /* SQL 블록 위쪽의 'SQL 정의' 칸 — key 는 meta.sqlBlocks[종류][].info 에 저장되는 이름 (그리기: screen.js infoFieldsHtml)
-   options: 고르는 칸(첫 값 '' = 고르지 않음) · multiline: 여러 줄 · wide: 한 줄 전체 · type: 'date' 날짜(20260101 → 2026-01-01) */
+   options: 고르는 칸(첫 값 '' = 고르지 않음) · multiline: 여러 줄 · wide: 한 줄 전체 · type: 'date' 날짜(20260101 → 2026-01-01)
+   width: 칸 너비 고정(CSS 값, 예: '100px' — 나머지 칸이 남은 폭을 나눔) */
 const SQL_INFO_FIELDS = [
   {key: 'displayName', label: '화면표시명'},
   {key: 'dataSource', label: '데이터소스'},
   {key: 'useYn', label: '사용여부'},
   {key: 'version', label: '버전'},
   {key: 'status', label: '상태'},
-  {key: 'comment', label: '커맨트', multiline: true, wide: true}
+  {key: 'comment', label: '커맨트'}
 ];
 
 /* 표로 바꾸기 전의 정의서 파일 — <탭>/items.json 이 없을 때 이 내용을 '기본' 항목 하나로 옮겨 보여 줍니다(screen-data.js loadDefLayers — 원본으로).
@@ -152,6 +172,8 @@ const ICON = {
   check: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>',
   upload: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>',
   warn: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>',
+  /** 둥근 원 안의 느낌표 — 안내 */
+  info: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5h.01"/></svg>',
   logo: '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/></svg>'
 };
 
@@ -162,7 +184,7 @@ const menuIconSvg = paths => `<svg class="ic" viewBox="0 0 24 24" width="15" hei
 const MENU_ICON = {
   /** 폴더 + 더하기 — 하위 폴더(묶음) 추가 */
   folderAdd: menuIconSvg('<path d="M3 7.5a1 1 0 0 1 1-1h3.5l2 2H20a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M12 11.5v4M10 13.5h4"/>'),
-  /** 문서 + 더하기 — 하위 메뉴(화면) 추가 */
+  /** 문서 + 더하기 — 파일(화면) 추가 */
   pageAdd: menuIconSvg('<path d="M13.5 3.5H7a1 1 0 0 0-1 1v15a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8z"/><path d="M13.5 3.5V8H18"/><path d="M12 11.5v5M9.5 14h5"/>'),
   /** 클립보드 — 탐색기 경로 복사 */
   clipboard: menuIconSvg('<path d="M9.5 4.5h5v2.5h-5z"/><path d="M14.5 5.5H17a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1h2.5"/>'),

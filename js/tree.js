@@ -2,7 +2,7 @@
    tree.js — 왼쪽 영역
      - 루트 폴더 선택 / 지난번 루트 다시 열기
      - 화면 트리 (상태 필터 · 검색 · 접기/펼치기)
-     - 폴더 메뉴 (하위 메뉴 추가 · 이름 변경 · 이동 · 경로 복사)
+     - 폴더 메뉴 (파일 추가 · 이름 변경 · 이동 · 경로 복사 · 삭제)
      - 상단 위치 표시(브레드크럼)
    ========================================================================== */
 
@@ -280,7 +280,7 @@ function showFolderMenu(position, target) {
   if (!target.isScreen) {
     items.push(
       ['하위 폴더 추가', () => addSubFolder(target), '', MENU_ICON.folderAdd],
-      ['하위 메뉴 추가', () => addSubMenu(target), '', MENU_ICON.pageAdd]
+      ['파일 추가', () => addSubMenu(target), '', MENU_ICON.pageAdd]
     );
   }
   items.push(['탐색기 경로 복사', () => copyFolderPath(target), '', MENU_ICON.clipboard]);
@@ -289,7 +289,8 @@ function showFolderMenu(position, target) {
     if (target.isScreen) items.push(['메뉴 복사', () => openMoveDialog(target, 'copy'), '', MENU_ICON.copy]);
     items.push(
       [(target.isScreen ? '메뉴' : '폴더') + ' 이동', () => openMoveDialog(target, 'move'), '', MENU_ICON.move],
-      ['이름 변경', () => renameMenuFolder(target), '', MENU_ICON.rename]
+      ['이름 변경', () => renameMenuFolder(target), '', MENU_ICON.rename],
+      ['삭제', () => deleteMenuFolder(target), 'danger', MENU_ICON.trash]
     );
   } else {
     items.push(['루트 경로 다시 설정', () => copyFolderPath(target, true), '', MENU_ICON.settings]);
@@ -326,12 +327,12 @@ async function addSubFolder(target) {
   }
 }
 
-/** 하위 메뉴(화면 폴더) 추가 — meta.json 을 만들므로 본문에 화면이 열립니다 */
+/** 파일(화면 폴더) 추가 — meta.json 을 만들므로 본문에 화면이 열립니다. 티켓번호는 자동으로 붙음 */
 async function addSubMenu(target) {
   const answer = await askText({
-    title: '하위 메뉴 추가',
+    title: '파일 추가',
     desc: '위치: ' + describeLocation(target.path),
-    label: '메뉴(화면) 이름',
+    label: '파일(화면) 이름',
     okText: '추가',
     hint: '본문에서 SQL·파일·정의서를 입력하는 화면이 만들어집니다. 묶음만 필요하면 ‘하위 폴더 추가’를 쓰세요.'
       + ' 특수문자 \\ / : * ? " < > | 와 asis, tobe 같은 예약어는 쓸 수 없습니다.',
@@ -343,14 +344,18 @@ async function addSubMenu(target) {
   if (await hasSubDir(target.dir, answer.value)) return toast('같은 이름의 폴더가 이미 있습니다.');
   try {
     await withBusy('메뉴를 만드는 중…', async () => {
+      const seq = await openTicketSequence(app.root);
+      const ticket = nextTicket(seq);
       const newDir = await target.dir.getDirectoryHandle(answer.value, {create: true});
       const now = new Date();
       await writeJson(newDir, 'meta.json', {
+        ticket,
         status: '요청',
         filesV: FILE_STRUCTURE_VERSION,
         createdAt: now.toLocaleString('ko-KR'),
         statusLog: [{status: '요청', at: now.toISOString()}]
       });
+      await saveTicketSequence(seq);
       treeState.closedKeys.delete(target.path.join('/'));   // 새 메뉴가 보이도록 상위 폴더를 펼침
       if (answer.checked) await openScreen([...target.path, answer.value]);
       else await renderTree();
@@ -384,6 +389,52 @@ async function relocateFolder(target, destParent, newName) {
     showHome();
   }
   await renderTree();
+}
+
+/**
+ * 삭제 (메뉴 · 폴더) — 하위 메뉴와 그 안의 SQL · 정의서 · 첨부 · 이력까지 모두 지움. 되돌릴 수 없음
+ * 실수를 막기 위해 이름을 그대로 입력해야 지울 수 있습니다.
+ */
+async function deleteMenuFolder(target) {
+  const kindName = target.isScreen ? '메뉴' : '폴더';
+  let screenCount = 0;
+  try {
+    screenCount = (await findAllScreens(target.dir)).length + (target.isScreen ? 1 : 0);
+  } catch (error) {
+    return toastError('삭제 실패', error);
+  }
+  const contents = target.isScreen
+    ? (screenCount > 1 ? `이 메뉴와 그 안의 메뉴 ${screenCount - 1}개` : '이 메뉴')
+    : (screenCount ? `이 폴더와 그 안의 메뉴 ${screenCount}개` : '이 폴더와 그 안의 모든 것');
+  const answer = await askText({
+    title: `${kindName} 영구 삭제`,
+    desc: `⚠ 삭제하면 되돌릴 수 없습니다. 휴지통에도 남지 않습니다.
+
+`
+      + `위치: ${describeLocation(target.path)}
+`
+      + `${contents}의 원본·신규 SQL, 정의서, 첨부 파일, 상태·잠금·작업 이력이 모두 지워집니다.`,
+    label: `지우려면 ${kindName} 이름 ‘${target.name}’을 그대로 입력하세요`,
+    placeholder: target.name,
+    okText: '영구 삭제',
+    danger: true,
+    validate: value => (value === target.name ? '' : '이름이 맞지 않습니다. 이름을 그대로 입력해야 지울 수 있습니다.')
+  });
+  if (!answer) return;
+  try {
+    await withBusy(`${kindName}를 지우는 중…`, async () => {
+      await target.parent.removeEntry(target.name, {recursive: true});
+      // 지운 폴더(또는 그 아래)의 화면을 보고 있었다면 현황으로 (등록 안 된 변경도 함께 지워진 것이므로 묻지 않음)
+      if (app.screen && isPathUnder(app.screen.path, target.path)) {
+        app.screen = null;
+        showHome();
+      }
+      await renderTree();
+    });
+    toast(`‘${target.name}’ ${kindName}를 삭제했습니다.`);
+  } catch (error) {
+    toastError('삭제 실패', error);
+  }
 }
 
 /** 이름 변경 */
@@ -462,12 +513,16 @@ async function resetCopiedWorkLog(dir) {
  * @param {FileSystemDirectoryHandle} destParent 복사해 넣을 상위 폴더
  * @param {string} newName 복사본 이름
  * @param {boolean} keepWorkLog true = 상태·이력·잠금까지 그대로, false = 작업 기록 초기화
+ * 어느 쪽이든 복사본의 화면에는 새 티켓번호를 붙입니다 (티켓번호는 겹치면 안 됨)
  */
 async function copyMenuFolder(target, destParent, newName, keepWorkLog) {
+  const seq = await openTicketSequence(app.root);
   const newDir = await destParent.getDirectoryHandle(newName, {create: true});
   try {
     await copyDirectory(target.dir, newDir);
     if (!keepWorkLog) await resetCopiedWorkLog(newDir);
+    await assignNewTickets(newDir, seq);
+    await saveTicketSequence(seq);
   } catch (error) {
     await destParent.removeEntry(newName, {recursive: true});
     throw error;

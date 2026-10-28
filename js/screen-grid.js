@@ -359,6 +359,21 @@ function deleteGridRow(button) {
   refreshIndicators();
 }
 
+/**
+ * 빈 줄 지우기 — 모든 칸이 비었거나 기본값(고르는 칸의 첫 값)인 줄. 등록한 뒤 화면을 저장된 모양과 맞추기 위함
+ * (저장할 때는 readGridOf 가 이미 빈 줄을 빼고 읽음). 줄이 하나도 안 남게 되면 빈 줄 하나는 남김(입력할 자리)
+ */
+function removeEmptyGridRows(table) {
+  const columnsKey = table.dataset.cols;
+  const isEmptyRow = tr => [...tr.querySelectorAll(GRID_CELL_SELECTOR)].every((cell, col) => cell.value.trim() === gridCellDefault(columnsKey, col));
+  const emptyRows = [...table.tBodies[0].rows].filter(isEmptyRow);
+  if (emptyRows.length === table.tBodies[0].rows.length) emptyRows.shift();
+  if (!emptyRows.length) return;
+  emptyRows.forEach(tr => tr.remove());
+  clearGridPasteUndo(table.id);
+  clearGridSelection();
+}
+
 /* ======================= 여러 칸 · 여러 줄 붙여넣기 ======================= */
 
 /**

@@ -1,6 +1,6 @@
 /* ==========================================================================
    layer-diff.js — 원본(asis)과 신규(tobe) 비교 계산
-     화면의 표시(screen-changes.js) · 비교 탭(diff.js) · 보고서(report.js)가 함께 씁니다.
+     화면의 표시(screen-changes.js) · 보고서(report.js)가 함께 씁니다.
      값만 받아 결과를 돌려주는 함수만 둡니다 (화면 요소는 건드리지 않음).
 
    용어
@@ -9,7 +9,7 @@
      항목 상태: same(동일) · changed(변경) · new(신규 — 원본 없음) · gone(삭제됨 — 원본에만 있음)
    ========================================================================== */
 
-/* 항목 상태 이름 (탭 줄 · 비교 탭 · 보고서). 동일은 따로 표시하지 않음 */
+/* 항목 상태 이름 (탭 줄 · 보고서). 동일은 따로 표시하지 않음 */
 const ITEM_STATE_LABELS = {same: '동일', changed: '변경', new: '신규', gone: '삭제됨'};
 
 /** 비교용 값 정리 (앞뒤 공백 무시, 없는 값은 '') */
@@ -105,16 +105,4 @@ const hasSqlDefinitionDiff = diff => diff.info.length > 0 || hasGridDiff(diff.pa
 function goneAsisItems(asisItems, tobeItems) {
   const pointed = new Set(tobeItems.map(item => item.asisId).filter(Boolean));
   return asisItems.filter(item => !pointed.has(item.id));
-}
-
-/**
- * 표 비교 결과 요약 글 (비교 탭 · 보고서): '변경 1줄 · 추가 2줄 · 삭제 1줄'
- * @returns {string} 차이가 없으면 ''
- */
-function gridDiffSummary(diff) {
-  const parts = [];
-  if (diff.changed.size) parts.push(`변경 ${diff.changed.size}줄`);
-  if (diff.added.size) parts.push(`추가 ${diff.added.size}줄`);
-  if (diff.deleted.length) parts.push(`삭제 ${diff.deleted.length}줄`);
-  return parts.join(' · ');
 }

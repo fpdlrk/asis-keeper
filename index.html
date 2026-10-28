@@ -33,6 +33,7 @@
     <span class="vsep" aria-hidden="true"></span>
     <nav class="crumb" id="crumb" aria-label="현재 위치"></nav>
     <span class="sp"></span>
+    <button type="button" id="btnSourceDiff" class="btn btn-s btn-ghost" title="두 소스를 붙여넣어 줄 단위로 비교합니다">소스 비교</button>
     <button type="button" id="btnFont" class="btn btn-s btn-ghost" title="글꼴 설정">글꼴</button>
     <button type="button" id="btnReport" class="btn btn-s btn-primary" disabled>보고서 만들기</button>
   </header>
@@ -110,6 +111,21 @@
   <div class="mbar"><button type="button" class="btn btn-s" id="dfClose">닫기</button></div>
 </div></div>
 
+<!-- 소스 비교 창 (상단 [소스 비교]): 아무 두 소스를 넣어 비교 (js/source-diff.js) -->
+<div id="srcDiffModal" class="overlay" hidden><div class="mbox wide sdbox" role="dialog" aria-labelledby="sdTitle">
+  <h3 id="sdTitle">소스 비교</h3>
+  <div class="dfhead"><span class="hint">두 소스를 붙여넣으면 바뀐 줄을 바로 색칠합니다. 열린 화면이 있으면 그 화면의 SQL을 불러올 수 있습니다.</span>
+    <span class="chg" id="sdChg"></span><span class="sp"></span>
+    <button type="button" class="btn btn-s" id="sdSwap">⇄ 좌우 바꾸기</button><button type="button" class="btn btn-s btn-ghost" id="sdClear">모두 지우기</button>
+    <label class="opt-check" title="띄어쓰기·들여쓰기·줄바꿈과 대소문자 차이는 변경으로 보지 않습니다."><input type="checkbox" data-ignore-format>공백·대소문자 무시</label></div>
+  <!-- SQL 블록의 원본(왼쪽) · 신규(오른쪽)와 같은 모양 (.blk-b · .pane) -->
+  <div class="blk sd-blk"><div class="blk-b">
+    <div class="pane pane-l"><div class="pane-h">왼쪽 소스<select id="sdLoadLeft" class="sd-load" aria-label="왼쪽에 불러올 SQL"></select></div><div id="sdLeft" class="sd-ed"></div></div>
+    <div class="pane pane-r"><div class="pane-h acc">오른쪽 소스<select id="sdLoadRight" class="sd-load" aria-label="오른쪽에 불러올 SQL"></select></div><div id="sdRight" class="sd-ed"></div></div>
+  </div></div>
+  <div class="mbar"><button type="button" class="btn btn-s" id="sdClose">닫기</button></div>
+</div></div>
+
 <!-- 정의서 항목 추가 창 (서비스 · 오브젝트 · 공통코드관리): 처음 추가할 때만 씁니다. 표 입력은 탭 본문에서 (js/screen-defs.js) -->
 <div id="defAddModal" class="overlay" hidden><div class="mbox" role="dialog" aria-labelledby="daTitle">
   <h3 id="daTitle">추가</h3>
@@ -155,6 +171,7 @@
 <script src="js/tree.js"></script>
 <script src="js/dashboard.js"></script>
 <script src="js/diff.js"></script>
+<script src="js/source-diff.js"></script>
 <script src="js/screen.js"></script>
 <script src="js/screen-blocks.js"></script>
 <script src="js/screen-sqltabs.js"></script>

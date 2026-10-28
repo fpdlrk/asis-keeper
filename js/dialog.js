@@ -196,7 +196,7 @@ function createMenuButton(ariaLabel, getItems) {
 /** Esc: 메뉴·모달·입력 창 모두 닫기 */
 function closeOverlays() {
   hideMenu();
-  ['#modal', '#fontModal', '#moveModal', '#diffModal'].forEach(selector => { $(selector).hidden = true; });
+  ['#modal', '#fontModal', '#moveModal', '#diffModal', '#srcDiffModal'].forEach(selector => { $(selector).hidden = true; });
   if (closeActiveDialog) closeActiveDialog();
 }
 

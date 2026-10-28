@@ -351,7 +351,7 @@ grep -rn "지운이름" js/ index.html
 **배경(사용자 요청)**: SQL 블록 위쪽에 'SQL 정의'(화면표시명 · 데이터소스 · 사용여부 · 버전 · 상태 · 커맨트 — 쿼리명은 SQL 제목과 같아 뺌),
 이력 바로 위에 'SQL 파라미터' 표(파라미터명 · 순서 · 파라미터 유형 · 인아웃 유형).
 
-- 칸 구성: `constants.js` — `SQL_INFO_FIELDS`(모두 글 입력칸, 커맨트는 여러 줄. 고르는 칸이 필요하면 `options` 를 주면 select 로 그려짐) · `GRID_COLUMNS['sql.params']`
+- 칸 구성: `constants.js` — `SQL_INFO_FIELDS`(모두 한 줄 글 입력칸 — 커맨트 · 비고도 2026-10-28 부터 한 줄로 나란히. 고르는 칸이 필요하면 `options` 를 주면 select 로 그려짐) · `GRID_COLUMNS['sql.params']`
   - 상태 · 파라미터 유형 · 인아웃 유형 등은 값 목록이 정해지지 않아 글 입력칸. 정해지면 `options`로 바꾸면 됨
 - 저장: `meta.sqlBlocks[종류][]`에 `info: {displayName, …}` · `params: [[…]]` (값이 있을 때만). 기존은 잠그기, 신규는 [등록] 때
 - 변경 감지: `blockOrderSignature` 의 네 번째 값(`readSqlDefinition`) → 탭 ● · 저장 바
@@ -435,6 +435,65 @@ grep -rn "지운이름" js/ index.html
   신규 단계의 원본 블록(`#blocks-asis`)은 숨긴 채 읽기 전용 — 나란히 보기 · 상태 · 표시가 여기서 원본 값을 읽음
 - 정의서는 지금 고치는 쪽만 그림. 원본은 `app.screen.asisDefItems[탭]`
 - 단계 안내 띠는 탭 위(`.phase`, `phaseBannerHtml`) — 모든 탭에서 보임
+
+### ㉛ 등록할 때 표의 빈 줄 정리
+
+- 저장 데이터에는 원래부터 빈 줄이 빠짐(`readGridOf` — 모든 칸이 비었거나 기본값인 줄 제외). 등록 뒤에도 화면에 빈 줄이 남아 '같이 저장된 것처럼' 보였음
+- `saveSection` → `saveSectionData`(저장) + 그 영역 표의 빈 줄을 화면에서도 지움(`removeEmptyGridRows`, `screen-grid.js`). 표가 비면 입력할 빈 줄 하나는 남김
+
+### ㉚ 오브젝트 '개요' 표 → 정의 칸
+
+- 다른 탭처럼 정의 칸으로: 이름 · 화면표시명 · 링크 · 유형 · 높이 · 넓이 (`DEF_TABS.object.info`, 표의 열 이름 그대로). `GRID_COLUMNS['object.overview']` 삭제
+- 예전 개요 표(저장된 `grids.overview` · 더 예전 `object/overview.json`)의 **첫 줄**은 정의 칸으로 옮겨 보여 줌 — 공통코드관리와 같은 방식(`LEGACY_OVERVIEW_INFO.object`).
+  둘째 줄부터는 옮기지 않음. 잠긴 원본 파일은 고치지 않으므로 원본 확인(해시)은 그대로 '일치'
+- 읽을 때 지금 탭에 없는 표(예: 정의 칸으로 바뀐 `overview`)는 버림(`normalizeDefItem`) — 다시 저장할 때 남지 않게
+- '속성' 표 제목 → **'오브젝트 속성'** (키는 그대로 `attrs`)
+- 열 변경: 오브젝트 속성 = 속성구분코드 · 속성이름 · 속성값 / 하위 오브젝트 = 순서 · 자식오브젝트명 · 자식오브젝트 출력명.
+  예전 열로 넣은 값은 열 순서대로 새 열에 들어감(하위 오브젝트는 예전 4열 → 3열이라 넷째 칸 '설명'은 표에서 안 보이고 다음 등록 때 빠짐)
+- 이제 임시안 열은 `code.system`(시스템코드관리)뿐
+- 정의 칸 변경: 화면표시명 · 오브젝트 유형 · 오브젝트 링크 · 높이 · 너비 · 비고. key 는 그대로(`displayName` `type` `link` `height` `width`) + `remark` 추가.
+  '이름'(`name`) 칸은 뺌 — 이미 넣은 값은 화면에 안 보이고 다음 등록 때 빠짐(예전 개요 표의 첫 칸도 더는 옮기지 않음)
+- 정의 칸 너비 고정: 칸 정의에 `width`(예: 높이 · 너비 `'100px'`). 정의 칸 묶음(`.infobox-g`)을 grid → **flex wrap** 으로 바꿔 고정 너비 칸과 늘어나는 칸이 섞이게 함(모든 탭 공통)
+- 열 너비: `GRID_COLUMNS[키].widths = {열 번호: CSS 너비}` 지원(`gridHtml`이 `<colgroup>` + `table-layout: fixed`). 오브젝트 속성 = 속성구분코드 · 속성이름 16.5%(같게 나눌 때의 절반), 나머지 속성값 / 하위 오브젝트 = 순서 100px
+
+### ㉙ 탭의 '신규' 글자 → 빨간 동그라미 N
+
+- 신규 단계에서 원본이 없는 항목(SQL · 정의서 [+ 추가]로 만든 것)의 탭 표시를 글자 '신규' 대신 **빨간 배경(`--new-badge-bg`) 흰 'N'**(`NEW_BADGE_TEXT`, 마우스를 올리면 '신규 (원본 없음)') — 이름 **앞**에 (CSS `order: -1`)
+- '변경' · '삭제됨' 글자와 탭 줄 오른쪽 요약(`신규 n`)은 그대로
+
+### ㉘ '비교' 탭 → 상단 [소스 비교] 창 (아무 두 소스를 비교)
+
+**배경(사용자 요청)**: 작업하다 보면 "이 소스와 저 소스"를 비교하고 싶을 때가 있음 → 비교를 탭에서 빼서 상단 오른쪽 단추 + 레이어 창으로.
+- 새 파일 `js/source-diff.js`: `#srcDiffModal`(index.html). 왼쪽 · 오른쪽 Ace 편집기에 붙여넣으면 입력이 멈출 때(300ms) 자동 비교
+  - 모양은 SQL 블록의 원본/신규 나란히 보기와 같음(`.blk-b` · `.pane-l/.pane-r`): 편집기가 창 높이(88vh)를 채우고, 바뀐 줄을 편집기 안에 색칠(`ln-del`/`ln-add`) + 위쪽 'n줄 변경',
+    스크롤 함께 움직임 — 스크롤 연동은 `linkScrollTogether(left, right)`로 떼어 내어 SQL 블록(`linkPairScroll`)과 함께 씀
+  - 열린 화면이 있으면 '화면의 SQL 불러오기'(원본 · 신규 블록, 등록 전 입력값 포함), [좌우 바꾸기] · [모두 지우기], 공백·대소문자 무시(다른 비교와 함께 움직임)
+  - 편집기는 처음 열 때 만들고 계속 씀 — 창을 닫았다 열어도 넣은 소스가 남음. 프로젝트 · 화면이 없어도 씀. Esc 로 닫힘
+- **'비교' 탭 삭제**: `SCREEN_TABS`의 `cmp`, `renderCompareTab` · `defCompareHtml` · `compareItemRowHtml` · `defDiffDetail` · `sqlDefinitionDiffDetail` · `STATE_TAG_CLASS` ·
+  `compareRenderSeq` · `goToItem` · `data-goto-tab` · `gridDiffSummary`(layer-diff.js) · `.cmp-items/.cmp-link` CSS.
+  원본 대비 변경은 각 탭의 상태 표시 · 칸 표시 · 보고서로 봄. 화면 전체 변경 요약이 다시 필요하면 소스 비교 창에 '이 화면 전체' 보기를 붙이는 방법이 있음
+
+### ㉗ 신규 SQL 블록 머리 정리 — 원본 선택 상자 · [원본 SQL 가져오기] 제거
+
+**배경(사용자 질문)**: 원본/신규 구조로 바뀐 뒤에도 블록 머리의 두 요소가 필요한가 → 상의 후 결정
+- [원본 SQL 가져오기] **삭제** (`importAsisSql` · `data-from` 없음) — 잠글 때 원본이 신규로 복사되고, 지운 SQL 은 [되살리기]가 있어서
+- 원본 선택 상자 → ⋯ 메뉴 **'비교할 원본 바꾸기'**(`showPairMenu`, 메뉴로 원본 목록 + '없음 (신규 쿼리)', 지금 짝에 ✓, 예전 데이터는 '자동(순서)')
+  - `fillPairSelect` · `PAIR_SELECT_AUTO` · `.pair-pick/.pair-sel` CSS 삭제. `setTobePair(tobeBlockId, asisId)`는 원본 id 또는 `NO_ASIS_PAIR`를 받음
+  - `PAIR_SELECT_NONE`은 [+ SQL 추가] 창의 선택 상자에서만 씀
+
+### ㉖ 자잘한 요청 다섯 가지 (2026-10-28)
+
+- SQL 추가 창 제목: '신규 SQL 추가' → **'SQL 추가'**
+- 탭 위 안내 띠(잠김 · 원본 단계 · 잠금 풀림 모두): `.banner.note`(표 칸 입력 때와 같은 `--grid-focus-bg` 배경 · `--grid-focus-line` 선) + 아이콘 `ICON.info`(원 안의 느낌표)
+- 고칠 수 없는(disabled) 칸 · 단추의 글자색은 모두 토큰 `--disabled`(#a9aeb5) — `input/select/textarea:disabled` 공통 규칙 + `.btn:disabled` · `.bt:disabled`(잠긴 원본 SQL 제목) · 표/정의 칸의 고르는 칸 · 이동 창의 고를 수 없는 위치
+- 트리 우클릭 **[삭제]**(메뉴 · 폴더, 루트 제외) — `deleteMenuFolder`(`tree.js`). 되돌릴 수 없어서 **이름을 그대로 입력해야** 지움(빨간 단추),
+  안에 든 메뉴 수를 알려 줌. 보고 있던 화면이 지워지면 현황으로
+- **티켓번호 자동 생성 · 수정 불가**: **6자리 일련번호 000001 ~ 999999**(처음엔 무작위였다가 사용자 요청으로 일련번호로 바꿈), 프로젝트 안에서 겹치지 않음
+  - `openTicketSequence` · `nextTicket` · `saveTicketSequence` · `assignNewTickets`(`screen-data.js`)
+  - 다음 번호 = max(루트 `.ticket-seq.json`의 마지막 번호, 화면들이 쓰는 가장 큰 6자리 번호) + 1 → 화면을 지워도 번호를 다시 쓰지 않음. 쓰는 번호는 건너뜀
+  - 파일 추가 때 붙임, 티켓이 없는 예전 화면은 열 때 붙여 바로 저장, 메뉴 복사본에는 새 번호
+  - 입력칸은 `disabled`, `COMMON_FIELDS`에서 `ticket` 뺌. **이미 손으로 넣은 예전 티켓은 그대로 둠**(6자리가 아니어도)
+- 우클릭 '하위 메뉴 추가' → **'파일 추가'** (창 제목 · 이름 칸도)
 
 ### ㉕ 원본 잠금을 탭 단위로 (화면 하나에 잠금 하나 → 탭마다 하나)
 
@@ -527,7 +586,12 @@ grep -rn "지운이름" js/ index.html
 | `screen-defs.js` | `findDefItem` `defItemBodyHtml` `insertDefItem` |
 | `screen-sqltabs.js` | `pillStateText` `sqlTabElements` |
 | `screen-save.js` | `saveAsisBlocks` `saveSections` `pendingPathError` `saveDirtySections` · **삭제**: `LOCKED_SAVE_MESSAGE` `hashAsisFiles` `registerAsis` `setAsisEditorsReadOnly` `showAsisAsLocked` `showAsisAsUnlocked` |
-| `constants.js` (㉕) | `LAYER_TABS` `LEGACY_LOCK_KEYS` |
+| `constants.js` (㉕ ㉖) | `LAYER_TABS` `LEGACY_LOCK_KEYS` `TICKET_DIGITS` `MAX_TICKET_TRIES` · `ICON.info` |
+| `constants.js` (㉖) | `TICKET_SEQ_FILE` (`MAX_TICKET_TRIES` 삭제) |
+| `screen-data.js` (㉖) | `isSequenceTicket` `formatTicket` `openTicketSequence` `nextTicket` `saveTicketSequence` `assignNewTickets` |
+| `source-diff.js` (신규, ㉘) | `SOURCE_DIFF_DELAY` `sourceDiffEditors` `sourceDiffTimer` `sourceDiffMarkers` `getSourceDiffEditors` `screenSqlChoicesHtml` `loadScreenSqlInto` `clearSourceDiffMarks` `renderSourceDiff` `scheduleSourceDiff` `openSourceDiff` `swapSourceDiff` `clearSourceDiff` `initSourceDiff` |
+| `screen-blocks.js` (㉘) | `linkScrollTogether` |
+| `tree.js` (㉖) | `deleteMenuFolder` |
 | `screen-data.js` (㉕) | `layerTabLabel` `emptyTabLock` `tabLocksOf` `isTabLockedIn` `anyTabLocked` `reopenedTabs` `lockedHashesOf` `setTabLock` |
 | `screen-lock.js` (㉕, 다시 씀) | `isTabLocked` `layerOf` `tabPhaseHtml` `saveOriginalOf` `hashOriginalOf` `originalIdsOf` `lockTab` `unlockTab` · **삭제**: `isLocked` `currentLayer` `wasAsisUnlocked` `lockOriginal` `unlockAsis` `hashOriginal` `originalItemIds` |
 | `screen-blocks.js` | `TITLE_EDIT_HINT` `TITLE_VIEW_ATTRS` `startTitleEdit` `finishTitleEdit` `handleTitleKeydown` (㉔) · **삭제**: `setAsisDefinitionReadOnly` |
@@ -606,6 +670,13 @@ grep -rn "지운이름" js/ index.html
 ---
 
 ## 5. 확인이 필요한 것 (브라우저에서 직접)
+
+### 자잘한 요청 (㉖) — 아직 확인 안 함
+
+- [ ] SQL 추가 창 제목 · 잠긴 탭 안내 띠 색과 아이콘 · 우클릭 '파일 추가'
+- [ ] 우클릭 [삭제] — 이름이 틀리면 안 지워지는지, 메뉴/폴더 삭제 후 트리 · 보던 화면 처리
+- [ ] 소스 비교 창(㉘) — 상단 [소스 비교], 붙여넣으면 자동 비교, 화면의 SQL 불러오기, 좌우 바꾸기, Esc 로 닫기, 닫았다 열어도 소스가 남는지. '비교' 탭이 없어졌는지
+- [ ] 티켓번호 — 새 파일에 000001 부터 차례로 붙는지(기존 6자리 번호가 있으면 그다음부터), 화면을 지운 뒤에도 번호가 다시 쓰이지 않는지, 고칠 수 없는지, 티켓 없던 화면을 열면 붙는지, 메뉴 복사본은 다른 번호인지
 
 ### 탭 단위 잠금 (㉕) — 아직 확인 안 함
 

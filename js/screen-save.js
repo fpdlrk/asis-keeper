@@ -91,8 +91,15 @@ async function saveTobeBlocks() {
   screen.hasSavedTobe = hasSavedTobeSql();
 }
 
-/** 영역 하나 등록 — SQL · 정의서는 지금 고치는 쪽(원본/신규)에 저장 */
+/** 영역 하나 등록 — SQL · 정의서는 지금 고치는 쪽(원본/신규)에 저장. 등록한 뒤 그 영역 표의 빈 줄은 화면에서도 지움 */
 async function saveSection(section) {
+  await saveSectionData(section);
+  const container = section === 'sql' ? $('#blocks-' + layerOf('sql')) : (section in DEF_TABS ? $('#defs-' + section) : null);
+  if (container) container.querySelectorAll('table.grid').forEach(removeEmptyGridRows);
+}
+
+/** 영역 하나의 데이터 저장 (saveSection 이 부름) */
+async function saveSectionData(section) {
   const screen = app.screen;
   if (section === 'sql') {
     if (isTabLocked('sql')) {
@@ -214,14 +221,13 @@ function handleScreenClick(e) {
   else if (data.reviveSql) reviveSqlBlock(data.reviveSql);          // 삭제된 원본 SQL [되살리기]
   else if (data.reviveDef) reviveDefItem(data.reviveDef, data.bid); // 삭제된 원본 정의서 항목 [되살리기]
   else if (data.reviveRow) reviveGridRow(data.reviveRow, data.rid); // 삭제된 줄 [되살리기]
-  else if (data.gotoTab) goToItem(data.gotoTab, data.bid);          // 비교 탭의 항목 이름 → 그 탭의 그 항목
   else if (data.logSave) saveItemLog(data.logScope, data.kind, data.logSave);   // 항목 이력 [이력 저장]
-  else if (data.from) importAsisSql(data.from);                  // [원본 SQL 가져오기]
   else if (data.hist) loadHistoryVersion(data.hist);             // 변경 이력 [편집기로 불러오기]
   else if (data.pickdir) pickFolderFiles(data.pickdir);          // [폴더 선택]
   else if (data.menu === 'tobe') {
     showMenuBelow(button, [
       ['원본과 비교 (창으로 보기)', () => openSqlDiffWindow(data.bid), '', MENU_ICON.compare],
+      ['비교할 원본 바꾸기', () => showPairMenu(button, data.bid), '', MENU_ICON.settings],
       ['블록 삭제', () => deleteSqlBlock('tobe', data.bid), 'danger', MENU_ICON.trash]
     ]);
   } else if (data.menu === 'asis') {
@@ -244,7 +250,6 @@ function initScreen() {
   sidePanel.addEventListener('click', handleScreenClick);
   main.addEventListener('change', e => {
     if (e.target.id === 'stSel') changeStatus(Number(e.target.value));
-    else if (e.target.dataset.pairSel) setTobePair(e.target.dataset.pairSel, e.target.value);   // 비교할 원본 SQL 선택
   });
   // 무엇이든 입력하면 탭 표시·저장 바 갱신. SQL 블록 제목은 입력하는 대로 대문자로 고침
   main.addEventListener('input', e => {

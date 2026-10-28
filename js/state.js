@@ -14,7 +14,7 @@ const app = {
   root: null,
   /** 열려 있는 화면 상태. 현황(대시보드)일 때는 null */
   screen: null,
-  /** 화면에서 보고 있는 탭 id ('asis' | 'tobe' | 'cmp' | 'service' | 'object' | 'code' | 'attach') */
+  /** 화면에서 보고 있는 탭 id ('sql' | 'service' | 'object' | 'code' | 'attach') */
   tab: 'sql',
   /** 왼쪽 상태 필터. null = 전체, 0~3 = 상태 번호 */
   statusFilter: null,

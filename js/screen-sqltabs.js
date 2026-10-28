@@ -33,8 +33,11 @@ const pillTabsBarHtml = barId => `<div class="sqltabs"><div class="pilltabs-scro
   + `<div class="sqltabs-tools" id="tabsTools-${barId}"></div></div>`
   + `<div class="sqltabs-empty" id="tabsEmpty-${barId}" hidden></div>`;
 
-/** 원본 대비 상태 글 (탭 이름 뒤) — 동일이면 비움 */
-const pillStateText = state => (state && state !== 'same' ? ITEM_STATE_LABELS[state] : '');
+/* 신규(원본 없음) 항목은 글자 대신 빨간 동그라미 안의 'N' 으로 표시 (CSS .sqltab[data-st="new"] .sqltab-st) */
+const NEW_BADGE_TEXT = 'N';
+
+/** 원본 대비 상태 글 (탭 이름 뒤) — 동일이면 비움, 신규는 N 표시 */
+const pillStateText = state => (state === 'new' ? NEW_BADGE_TEXT : state && state !== 'same' ? ITEM_STATE_LABELS[state] : '');
 
 /**
  * 탭 하나: [● 이름 상태] [×]
@@ -103,6 +106,7 @@ function markPillTab(barId, id, title, dirty, state = '') {
   if (label.textContent !== title || stateLabel.textContent !== stateText) {
     label.textContent = title;
     stateLabel.textContent = stateText;
+    stateLabel.title = state === 'new' ? '신규 (원본 없음)' : '';
     tab.title = title;
     updatePillTabOverflow(barId);   // 글 길이가 바뀌면 넘침도 바뀔 수 있음
   }
@@ -328,7 +332,7 @@ function askNewSqlBlock(kind) {
   return new Promise(resolve => {
     const modal = $('#sqlAddModal'), nameInput = $('#saName'), logInput = $('#saLog'), error = $('#saErr');
     const editor = getSqlAddEditor();
-    $('#saTitle').textContent = `${LAYER_LABELS[kind]} SQL 추가`;
+    $('#saTitle').textContent = 'SQL 추가';
     nameInput.value = '';
     logInput.value = '';
     editor.setOption('fontFamily', codeFontStack);   // 글꼴 설정을 바꿨을 수 있음

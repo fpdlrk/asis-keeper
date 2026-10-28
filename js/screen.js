@@ -12,7 +12,7 @@
      screen-files.js   : 파일 목록 (끌어다 놓기, 저장 경로, 신규/수정/동일 표시)
      screen-save.js    : 등록 · 상태 변경, 화면 이벤트 연결
 
-   탭: SQL · 비교 · 서비스 · 오브젝트 · 공통코드관리 · 첨부
+   탭: SQL · 서비스 · 오브젝트 · 공통코드관리 · 첨부 (두 소스 비교는 상단 [소스 비교] 창 — source-diff.js)
    원본 / 신규: 탭마다(SQL · 서비스 · 오브젝트 · 공통코드관리) 잠그기 전(원본 단계)에는 원본을, 잠근 뒤(신규 단계)에는 신규를 고칩니다 (screen-lock.js)
    오른쪽 영역: 상태 이력(위 50%) · 메모(아래 50%)
    등록은 하단 저장 바 하나로 모음. 잠그기는 각 탭 맨 위 단계 안내 띠의 단추로.
@@ -20,7 +20,7 @@
 
 /* ---- 탭 · 등록 영역 ---- */
 const SCREEN_TABS = [
-  ['sql', 'SQL'], ['cmp', '비교'],
+  ['sql', 'SQL'],
   ['service', '서비스'], ['object', '오브젝트'], ['code', '공통코드관리'], ['attach', '첨부']
 ];
 /* 저장 바의 [등록] 이 다루는 영역과 이름 (등록 순서대로). 'common' = 티켓·작업자·원본 위치·메모
@@ -41,8 +41,8 @@ const TEXT_EDITOR_HEIGHTS = {memo: 110};
 const SQL_EDITOR_HEIGHT = 400;   // SQL 탭은 한 번에 하나만 보이므로 넉넉하게 (아래 모서리를 끌어 조절 가능)
 const ROLLBACK_EDITOR_HEIGHT = 120;
 
-/** 작업 정보(상단 한 줄) 입력칸 id = meta 의 키 */
-const COMMON_FIELDS = ['ticket', 'worker', 'origin'];
+/** 작업 정보(상단 한 줄) 입력칸 id = meta 의 키 (티켓번호는 자동으로 붙고 고칠 수 없어 빠짐) */
+const COMMON_FIELDS = ['worker', 'origin'];
 
 /**
  * 새 화면 상태 만들기 (app.screen 에 들어감)
@@ -159,7 +159,7 @@ function refreshIndicators() {
   // 탭(과 오른쪽 메모 제목) 옆 표시. 'common' 표시는 메모 제목 옆에 있음
   for (const section of [...SCREEN_TABS.map(([id]) => id), 'common']) {
     const mark = document.querySelector(`.mk[data-m="${section}"]`);
-    if (!mark || section === 'cmp') continue;
+    if (!mark) continue;
     const dirty = isDirty(section), registered = isRegistered(section);
     mark.className = 'mk ' + (dirty ? 'dirty' : registered ? 'done' : '');
     mark.textContent = dirty ? '' : registered ? '✓' : '';
@@ -207,6 +207,13 @@ async function openScreen(path, reload) {
     const meta = await readJson(dir, 'meta.json', {});
     // 루트를 열 때 파일 구조 변환을 마쳤으므로, 이후 이 화면에 저장하는 파일은 새 구조
     if (!meta.filesV) meta.filesV = FILE_STRUCTURE_VERSION;
+    // 티켓번호가 없는 예전 화면은 지금 붙여 바로 저장
+    if (!meta.ticket) {
+      const seq = await openTicketSequence(app.root);
+      meta.ticket = nextTicket(seq);
+      await writeJson(dir, 'meta.json', meta);
+      await saveTicketSequence(seq);
+    }
     const previousScreen = app.screen;
     const screen = createScreenState(path, dir, meta);
     if (reload && previousScreen) {   // '변경 취소' 뒤에도 보던 SQL 탭·정의서 항목 유지
@@ -286,7 +293,7 @@ function gridRowHtml(columnsKey, cells, readOnly = false, rowId = newId('r')) {
  * @param {boolean} [locked] 고칠 수 없게 (글자 고르기·복사는 됨)
  */
 function infoFieldsHtml(fields, info = {}, locked = false) {
-  const html = fields.map(({key, label, options, multiline, wide, type}) => {
+  const html = fields.map(({key, label, options, multiline, wide, type, width}) => {
     const value = (info || {})[key] || '';
     const attrs = `data-info="${key}" aria-label="${label}"`;
     let control;
@@ -302,7 +309,8 @@ function infoFieldsHtml(fields, info = {}, locked = false) {
         : `<input type="text" ${attrs}${typeAttrs} value="${escapeHtml(value)}"${readOnly}>`;
       control = `<span class="copy-wrap">${field}${hoverCopyButtonHtml('data-copy-input')}</span>`;
     }
-    return `<label class="infobox-f${wide ? ' wide' : ''}"><span>${label}</span>${control}</label>`;
+    const fixedWidth = width ? ` style="flex: 0 0 ${width}"` : '';   // 너비를 정한 칸 (예: 높이 · 너비 100px)
+    return `<label class="infobox-f${wide ? ' wide' : ''}"${fixedWidth}><span>${label}</span>${control}</label>`;
   }).join('');
   return `<div class="infobox"><div class="infobox-g">${html}</div></div>`;
 }
@@ -327,7 +335,12 @@ function readInfoFields(container) {
  * @param {boolean} [readOnly] 고칠 수 없는 표 — 원본(잠긴 뒤) · 삭제된 항목 (고르기·복사는 됨. 행 추가·삭제 단추는 숨김)
  */
 function gridHtml(tableId, columnsKey, grid, title, readOnly = false) {
-  const header = GRID_COLUMNS[columnsKey].cols.map(col => `<th>${col}</th>`).join('');
+  const {cols, widths} = GRID_COLUMNS[columnsKey];
+  const header = cols.map(col => `<th>${col}</th>`).join('');
+  // 열 너비를 정한 표(GRID_COLUMNS[].widths)는 <colgroup> 으로 너비를 주고 고정 배치 — 너비를 안 준 열이 남은 폭을 나눠 가짐
+  const colgroup = widths
+    ? `<colgroup>${cols.map((_, i) => `<col${widths[i] ? ` style="width: ${widths[i]}"` : ''}>`).join('')}<col class="col-del"></colgroup>`
+    : '';
   const rows = (grid && grid.rows) || [];
   const ids = rowIdsOf(rows, grid && grid.ids);
   const body = rows.length
@@ -335,7 +348,7 @@ function gridHtml(tableId, columnsKey, grid, title, readOnly = false) {
     : gridRowHtml(columnsKey, [], readOnly);
   const addButton = readOnly ? '' : `<button type="button" class="btn btn-s" data-add="${tableId}">+ 행 추가</button>`;
   return `<div class="fld${readOnly ? ' readonly' : ''}"><div class="fld-h"><span class="fld-l grid-title">${escapeHtml(title)}</span>${addButton}</div>`
-    + `<div class="gridwrap"><table class="grid" id="${tableId}" data-cols="${columnsKey}"><thead><tr>${header}<th></th></tr></thead><tbody>${body}</tbody></table></div>`
+    + `<div class="gridwrap"><table class="grid${widths ? ' fixed-cols' : ''}" id="${tableId}" data-cols="${columnsKey}">${colgroup}<thead><tr>${header}<th></th></tr></thead><tbody>${body}</tbody></table></div>`
     + `<div class="gone-rows" data-gone-rows="${tableId}"></div></div>`;
 }
 
@@ -360,7 +373,7 @@ function screenHeaderHtml(meta) {
   return `<div class="scr-head">
     <div class="row1"><h1 class="h1">${escapeHtml(lastOf(app.screen.path))}</h1></div>
     <div class="meta">
-      <label>티켓<input type="text" id="ticket" class="inl" value="${escapeHtml(meta.ticket || '')}" placeholder="-"></label>
+      <label title="화면을 만들 때 자동으로 붙는 번호입니다 (고칠 수 없음)">티켓<input type="text" id="ticket" class="inl mono" value="${escapeHtml(meta.ticket || '')}" placeholder="-" disabled></label>
       <label>작업자<input type="text" id="worker" class="inl" value="${escapeHtml(meta.worker || '')}" placeholder="-"></label>
       <label title="파일을 올릴 때 저장 경로의 기본값으로 쓰입니다">원본 위치<input type="text" id="origin" class="inl mono" value="${escapeHtml(meta.origin || '')}" placeholder="예: /src/main/webapp/hr/"></label>
       <label>상태<select id="stSel" class="stpill s${statusIndex}" title="바꾸면 바로 저장되고 이력이 남습니다">${statusOptions}</select></label>
@@ -394,11 +407,6 @@ function screenPanelsHtml(meta) {
         <div id="gone-tobe" class="blocks"></div>
         <div id="hist"></div>
       </div>
-    </div>
-
-    <div class="panel" data-t="cmp">
-      <div class="toolbar"><span class="muted">등록하지 않은 입력값과 대기 파일까지 포함해 비교합니다.</span><span class="sp"></span>${ignoreFormatToggleHtml()}</div>
-      <div id="cmpBody"></div>
     </div>
 
     ${Object.keys(DEF_TABS).map(defPanelHtml).join('')}
@@ -601,19 +609,7 @@ function showTab(tabId) {
   });
   resizeAllEditors();
   if (tabId === 'sql' && isTabLocked('sql')) refreshPairedBlocks();
-  if (tabId === 'cmp') renderCompareTab();
   scheduleChangeMarks();
   renderMiniBar();
 }
 
-/**
- * 탭 · 항목으로 이동 (비교 탭의 항목 이름을 누를 때)
- * @param {string} tabId 화면 탭 ('sql' 또는 정의서 탭)
- * @param {string} itemId SQL 블록 id 또는 정의서 항목 id ('삭제됨' 탭은 GONE_TAB_PREFIX 가 붙은 id)
- */
-function goToItem(tabId, itemId) {
-  showTab(tabId);
-  if (tabId === 'sql') activateSqlTab(layerOf('sql'), itemId);
-  else activateDefTab(tabId, itemId);
-  scrollScreenToTop();
-}

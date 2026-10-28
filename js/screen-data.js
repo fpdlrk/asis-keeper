@@ -106,6 +106,49 @@ async function findChangedFiles(dir, hashes, {stopAtFirst = false} = {}) {
   return changed;
 }
 
+/* ======================= 티켓번호 (일련번호) =======================
+   쓰는 법: const seq = await openTicketSequence(app.root); … nextTicket(seq) … ; await saveTicketSequence(seq);
+   다음 번호 = max(마지막으로 낸 번호(.ticket-seq.json), 화면들이 쓰는 가장 큰 6자리 번호) + 1
+   — 손으로 넣은 예전 티켓(6자리 숫자가 아님)은 순번 계산에서 빼고, 이미 쓰는 번호는 건너뜀 */
+
+/** 6자리 일련번호 모양인지 */
+const isSequenceTicket = ticket => new RegExp(`^\\d{${TICKET_DIGITS}}$`).test(ticket);
+
+/** 숫자 → '000123' */
+const formatTicket = number => String(number).padStart(TICKET_DIGITS, '0');
+
+/**
+ * 티켓 순번 열기: 프로젝트의 모든 화면이 쓰는 번호 + 마지막으로 낸 번호
+ * @returns {Promise<{root, used: Set<string>, last: number}>}
+ */
+async function openTicketSequence(root) {
+  const used = new Set((await findAllScreens(root)).map(({meta}) => String(meta.ticket || '')).filter(Boolean));
+  const saved = await readJson(root, TICKET_SEQ_FILE, {});
+  const largestUsed = [...used].filter(isSequenceTicket).reduce((max, ticket) => Math.max(max, Number(ticket)), 0);
+  return {root, used, last: Math.max(Number(saved.last) || 0, largestUsed)};
+}
+
+/** 다음 티켓번호 (순번을 하나 올리고 그 번호를 씀으로 표시 — 여러 개를 연달아 내도 겹치지 않음) */
+function nextTicket(seq) {
+  let number = seq.last + 1;
+  while (seq.used.has(formatTicket(number))) number++;
+  if (number >= 10 ** TICKET_DIGITS) throw new Error(`티켓번호가 ${formatTicket(10 ** TICKET_DIGITS - 1)}까지 모두 쓰였습니다.`);
+  seq.last = number;
+  const ticket = formatTicket(number);
+  seq.used.add(ticket);
+  return ticket;
+}
+
+/** 마지막으로 낸 번호를 루트에 저장 (번호를 냈으면 꼭 부름) */
+const saveTicketSequence = seq => writeJson(seq.root, TICKET_SEQ_FILE, {last: seq.last});
+
+/** 폴더(하위 포함) 안의 모든 화면에 새 티켓번호를 붙임 — 메뉴를 복사했을 때 (복사본이 원래 번호를 그대로 쓰지 않게) */
+async function assignNewTickets(dir, seq) {
+  const ownMeta = await readJson(dir, 'meta.json', null);
+  if (ownMeta) await writeJson(dir, 'meta.json', {...ownMeta, ticket: nextTicket(seq)});
+  for (const {dir: screenDir, meta} of await findAllScreens(dir)) await writeJson(screenDir, 'meta.json', {...meta, ticket: nextTicket(seq)});
+}
+
 /* ======================= 탭별 원본 잠금 =======================
    meta.tabLocks = {탭: {locked, savedAt, lockedIds, hashes, unlockLog}}  (탭 = LAYER_TABS)
      locked    : 잠겼는지 (= 그 탭이 신규 단계인지)
@@ -233,7 +276,8 @@ const defDataFiles = tab => [defLayerFile(tab, 'asis'), defLayerFile(tab, 'tobe'
 
 /** 저장된 항목을 화면에서 쓰는 모양으로 (빠진 값 채우기 · 예전 개요 표 → 정의 칸 · 줄 id) */
 function normalizeDefItem(tab, item) {
-  const grids = {...emptyDefGrids(tab), ...(item.grids || {})};
+  // 지금 탭에 있는 표만 (정의 칸으로 바뀐 예전 '개요' 표 등은 빼야 다시 저장할 때 남지 않음)
+  const grids = Object.fromEntries(DEF_TABS[tab].grids.map(([key]) => [key, (item.grids || {})[key] || []]));
   const rowIds = Object.fromEntries(Object.keys(grids).map(key => [key, rowIdsOf(grids[key], (item.rowIds || {})[key])]));
   return {
     id: item.id,

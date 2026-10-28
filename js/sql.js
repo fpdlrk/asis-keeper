@@ -66,11 +66,18 @@ function leadingCommentTitle(sql) {
 
 /* ---- "공백·대소문자 무시" 비교용 ---- */
 
-/** 줄 비교용 값: 공백을 하나로 줄이고 앞뒤 공백 제거, 소문자로 */
-const formatInsensitiveLine = line => line.replace(/\s+/g, ' ').trim().toLowerCase();
+/* 기호(= , ( ) ; + 등 — 글자 · 숫자 · _ 가 아닌 것) 앞뒤의 공백. 'EMP_NO = :a' 와 'EMP_NO=:a', 'A, B' 와 'A,B' 를 같게 보려고 지움
+   단어 사이 공백('SELECT A')은 지우면 뜻이 바뀌므로 한 칸으로만 줄임. 한글도 글자로 봄(u 플래그 \p{L}) */
+const SPACE_AROUND_SYMBOL = /\s*([^\p{L}\p{N}_\s])\s*/gu;
 
-/** 전체 글 비교용 값: 줄바꿈·공백·대소문자 차이를 모두 없앰 (줄을 다르게 나눈 것도 같게 봄) */
-const formatInsensitiveText = text => String(text).replace(/\s+/g, ' ').trim().toLowerCase();
+/** 공백 · 대소문자 차이를 없앤 값: 공백을 한 칸으로 → 기호 앞뒤 공백 제거 → 앞뒤 공백 제거 → 소문자 */
+const formatInsensitiveValue = text => String(text).replace(/\s+/g, ' ').replace(SPACE_AROUND_SYMBOL, '$1').trim().toLowerCase();
+
+/** 줄 비교용 값 (한 줄 안의 공백 · 대소문자 차이 무시) */
+const formatInsensitiveLine = line => formatInsensitiveValue(line);
+
+/** 전체 글 비교용 값: 줄바꿈까지 공백으로 보아 없앰 (줄을 다르게 나눈 것도 같게 봄) */
+const formatInsensitiveText = text => formatInsensitiveValue(text);
 
 /**
  * 두 글이 같은지

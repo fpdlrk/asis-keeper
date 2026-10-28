@@ -3,15 +3,17 @@
 다른 환경에서 Claude(또는 다른 사람)가 이어서 작업할 때 읽는 문서입니다.
 프로젝트 자체의 구조·규칙은 **`README.md`가 원본**입니다. 이 문서는 **"지금까지 무엇을 왜 바꿨고, 무엇이 남았는지"** 만 다룹니다.
 
-- 작성 시점: 2026-10-26 (1차) · 2026-10-27 갱신 (2차) · 2026-10-27~28 갱신 (3차 — 원본/신규 구조 전환 ~ ENTITY) · **2026-10-28 문서 정리**
+- 작성 시점: 2026-10-26 (1차) · 2026-10-27 갱신 (2차) · 2026-10-27~28 갱신 (3차 — 원본/신규 구조 전환 ~ ENTITY) · **2026-10-28 밤 갱신 (㊱~㊹ — 화면 다듬기 · 신규 화면 · 이력 통합 · 검색 · 트리 순서)**
 - 1차 작업(아래 1장): `82ccc06`, `0e041fa`로 커밋됨
 - 2차 작업(아래 2장): `6e125c3` ~ `cc883c2`로 커밋됨
-- 3차 작업(아래 2-1장 ㉓~㉟): `82edc18` ~ `1a9af5b`로 커밋됨. 지금 커밋하지 않은 변경은 없음
-- 커밋은 사용자가 직접 합니다(Claude 는 커밋하지 않음)
+- 3차 작업(아래 2-1장 ㉓~㉟): `82edc18` ~ `1a9af5b`로 커밋됨
+- 3차 이어서(아래 2-1장 ㊱~㊹): `6f070d8`(㊱~㊷) · `7fe335d`(㊸ ㊹)로 커밋됨. **지금 커밋하지 않은 변경은 없음**
+- 커밋은 사용자가 직접 합니다(Claude 는 커밋하지 않고, 답변에서 커밋 얘기를 꺼내지 않음)
+- **다음에 이어서 할 때**: 5장 맨 위 '㊱ ~ ㊹ 확인' 목록을 브라우저에서 먼저 확인하고, 6장 맨 위 '㊱ ~ ㊹에서 생긴 것'을 사용자와 정하세요
 - ⚠ 3차에서 화면 구조가 크게 바뀌었습니다. 2장의 ⑪(기존 SQL 탭 · 신규 SQL 탭), ⑮(`items.json`), ⑳(잠긴 기존 SQL 칸 잠금 전환) 설명은 **㉓가 우선**합니다.
 - ⚠ ㉓의 '화면 하나에 잠금 하나'는 **㉕(탭 단위 잠금)로 바뀌었습니다.** 잠금 관련은 ㉕가 우선합니다.
 - ⚠ '비교' 탭은 **㉘(상단 [소스 비교] 창)으로 없어졌고**, 오른쪽 영역(상태 이력 · 메모)은 **㉟로 없어졌습니다.** 그 전 장에서 비교 탭 · 오른쪽 영역을 말하는 부분은 지금과 다릅니다.
-- 2-1장은 ㉓을 빼면 **최근 것이 위**(㊸ → … → ㊱ → ㉓ → ㉟ → … → ㉔ 순)입니다.
+- 2-1장은 ㉓을 빼면 **최근 것이 위**(㊹ → … → ㊱ → ㉓ → ㉟ → … → ㉔ 순)입니다.
 - 실행: `index.html`을 **Chrome 또는 Edge로** 엽니다(더블클릭). 서버·빌드·설치 없음
 
 ---
@@ -393,9 +395,21 @@ grep -rn "지운이름" js/ index.html
 
 ---
 
-## 2-1. 3차 작업 (2026-10-27 ~ 28, ㊱ ~ ㊸ 말고는 커밋됨)
+## 2-1. 3차 작업 (2026-10-27 ~ 28, 모두 커밋됨)
 
-### ㊸ ENTITY 보기 단추 · 빈 목록 안내 정리 + 신규 화면 표시 오렌지 (2026-10-28, 아직 커밋 안 함)
+### ㊹ 자잘한 화면 다듬기 모음 (2026-10-28, `6f070d8` · `7fe335d`)
+
+사용자가 화면을 보며 하나씩 요청한 것 — 다른 항목에 적지 않은 것만 모음 (모두 CSS · 문구 수준)
+- **하단 줄(㊱)**: 배경을 왼쪽 영역과 같은 `var(--rail)` · 위 선 `#eceef1`, 좌우 여백 반(20 → 10px, 좁은 화면 16 → 8px)
+- **글꼴 단추(㊱)**: 앞 글자(T) 아이콘 · 글꼴 이름(`#fontName`) · 뒤 ▾. 기본 글꼴도 '기본 글꼴'이 아니라 이름 'Segoe UI + 맑은 고딕'(`DEFAULT_UI_FONT_NAME`)
+- **항목 이력 날짜**: `[2026.10.28]` → 괄호 없이 `2026.10.28`, 색 `#b0b5bc`(--faint 보다 연하게) · 11.5px(`.wl-d`) — 내용과 위계 구분.
+  이력 제목 앞 시계 아이콘(`ICON.clock`), [이력 저장] 단추 높이 = 입력칸(`.wlog-in` stretch)
+- **원본 확인 표시 문구**: '원본 일치' → **'원본 변경 없음'**(상단 기본정보 · ENTITY). 보고서의 '등록 시점과 일치 (SHA-256)'는 그대로
+- **트리 상태 선택 상자**: '전체 12 · 진행 3 …'의 숫자 뺌 → '전체 · 요청 · 진행 · 개발 · 운영'(`renderStatusSummary`)
+- **상단 단추**: [검색] · [소스 비교] 모두 앞에 아이콘(공통 클래스 `.btn-ic`). [소스 비교]만 테두리 선(`#btnSourceDiff`), [검색]만 바탕 `var(--soft)`(마우스 올리면 `--acc-soft`)
+- **잠그기 전 안내 띠**: 주황(`.banner.pre-lock`) — ㊸ 참고
+
+### ㊸ ENTITY 보기 단추 · 빈 목록 안내 정리 + 신규 화면 표시 오렌지 (2026-10-28, `7fe335d`)
 
 - ENTITY 탭 보기 단추: [이 화면에서 쓰는 것] → **[이 화면 서비스가 쓰는 것 n]**, [전체 n] — 개수(`renderEntityFilterCounts`, `renderEntityTabs`에서), 마우스 설명(`ENTITY_FILTER_HINTS`)
 - 빈 목록 안내(`entityEmptyText`): 저장 서비스가 없으면 '이 화면에는 저장 서비스가 없어…' / 있는데 연결이 없으면 '서비스 탭에서 [+ ENTITY 연결]로…' + **[전체 보기]** 단추
@@ -404,7 +418,7 @@ grep -rn "지운이름" js/ index.html
 - (같은 날) 신규 화면은 SQL 탭의 '왼쪽에 원본을 나란히…' 안내 · 공백·대소문자 무시 줄을 그리지 않음 — ㊲ 참고
 - 잠그기 전(원본 단계 · 잠금을 푼 상태) 안내 띠: 푸른색(`.banner.note`) → 주황(`.banner.pre-lock`, '신규 화면' 표시와 같은 토큰 + `--new-screen-line`) — 탭(`phaseBannerHtml`) · ENTITY(`entityPhaseHtml`). 잠근 뒤는 그대로 푸른색
 
-### ㊷ 트리를 만든 순서대로 (2026-10-28, 아직 커밋 안 함)
+### ㊷ 트리를 만든 순서대로 (2026-10-28, `6f070d8`)
 
 **배경(사용자 요청)**: TEST 다음에 PARK 를 만들었는데 이름순 정렬이라 PARK 가 위로 감 → 만든 순서대로
 - 브라우저 폴더 기능은 만든 시각을 안 주므로 폴더마다 순서 파일 `FOLDER_ORDER_FILE`(`.order.json` = 이름 배열)을 둠
@@ -414,13 +428,13 @@ grep -rn "지운이름" js/ index.html
 - `listChildFolders`를 쓰는 화면 찾기(`findAllScreens`) · 보고서 · 현황 순서도 트리 순서를 따름
 - 확인: node 로 임시 폴더에서 추가 · 이름 변경 · 삭제 · 앱 밖에서 만든 폴더 순서 확인. 확인 필요(브라우저): 추가 · 이름 변경 · 이동 · 복사 · 삭제 뒤 트리 순서
 
-### ㊶ 파일 추가 — 화면 종류를 꼭 고르게 (2026-10-28, 아직 커밋 안 함)
+### ㊶ 파일 추가 — 화면 종류를 꼭 고르게 (2026-10-28, `6f070d8`)
 
 **배경(사용자 요청)**: 기본이 '기존 화면 변경'이라 무심코 기존으로 만들 수 있음 → 처음엔 아무것도 안 고른 상태, 안 고르면 안내하고 추가 안 함
 - `askText`의 `choices.required` · `value` 없음 = 안 고름. 안 고르고 확인하면 `showChoiceError` — 알림(toast, `requiredMessage`) + 고르는 칸을 붉게(`.dlg-choice.need`) + 아래 안내(`#dlgChoiceErr`) + 첫 선택지로 커서. 고르면 바로 지움
 - 브라우저 alert 은 쓰지 않음(코드 규칙 5) — 창 안의 안내로 대신함
 
-### ㊵ 검색 둘로 — 트리는 이름만, 내용은 상단 [검색] 창 (2026-10-28, 아직 커밋 안 함)
+### ㊵ 검색 둘로 — 트리는 이름만, 내용은 상단 [검색] 창 (2026-10-28, `6f070d8`)
 
 **배경(사용자 요청)**: 트리 검색이 SQL 내용까지 찾아 이름이 안 맞는 화면이 나와 헷갈림
 - 트리(`tree.js`): `matchesSearch`(내용까지) **삭제** → `matchesTreeName`(파일 · 폴더 이름만). 폴더 이름이 맞으면 그 아래 모두 보임(`buildTreeBranch`의 `showAll`). 상태 필터는 그대로
@@ -431,7 +445,7 @@ grep -rn "지운이름" js/ index.html
   - 파일을 읽기만 함. 확인: node 로 임시 폴더(SQL · 서비스 · ENTITY · 이력)를 만들어 검색어 4개 결과 확인
 - 확인 필요(브라우저): 단축키 · 창 · 결과 눌러 이동(SQL 글자 선택, 서비스 항목, ENTITY) · 화면이 많을 때 속도 · 트리 이름 검색 · 폴더 이름 검색
 
-### ㊴ 탭 위 '잠금 해제 이력' 띠 없앰 (2026-10-28, 아직 커밋 안 함)
+### ㊴ 탭 위 '잠금 해제 이력' 띠 없앰 (2026-10-28, `6f070d8`)
 
 **배경(사용자 요청)**: 잠그기 · 잠금 풀기 기록이 하단 이력([화면] — ENTITY 는 그 ENTITY 이력)에도 나오므로 위에 이중으로 둘 필요 없음
 - **삭제**: `unlockLogBannerHtml` `unlockEntriesHtml`(screen-lock.js) — `tabPhaseHtml`은 단계 안내만, ENTITY(`entityItemHtml`)도 단계 안내만 · CSS `.unlocklog`
@@ -440,7 +454,7 @@ grep -rn "지운이름" js/ index.html
 - 그대로: `unlockLog` 저장 · 잠금이 풀린 동안의 안내 띠('잠금이 풀려 있습니다') · 현황 '잠금 해제 중' · 보고서 횟수 · 상단 '잠금 해제 중: 탭' 표시
 - 잠금 풀기 창 안내 문구를 '탭 이력([화면])에 남고'로
 
-### ㊳ 이력 하나로 — 상단 [이력] 창 없앰, 화면 이력은 항목 이력의 [화면] (2026-10-28, 아직 커밋 안 함)
+### ㊳ 이력 하나로 — 상단 [이력] 창 없앰, 화면 이력은 항목 이력의 [화면] (2026-10-28, `6f070d8`)
 
 **배경(사용자 요청)**: 이력이 상단 [이력] 창과 본문 하단 두 곳이라 같은 역할이 둘. 하단 이력에 화면 이력도 섞어 보이고 [화면]으로 거르게.
 ㉟에서 만든 화면 이력 창을 되돌린 것 (기록 저장은 그대로 — 보여 주는 곳만 바뀜)
@@ -453,7 +467,7 @@ grep -rn "지운이름" js/ index.html
   이미 저장된 '신규 생성' 이력은 그대로
 - 확인 필요(브라우저): [전체]에 [화면] 줄이 섞이는지 · [화면] 거르기 · 상태 바꾸면 바로 보이는지 · 항목 삭제 후 다른 항목 이력에 삭제 기록 · ENTITY 탭엔 [화면] 없음 · 시계 아이콘 · 단추 높이
 
-### ㊲ 신규 화면 — 파일 추가 때 '기존 화면 변경 / 신규 화면' 고르기 (2026-10-28, 아직 커밋 안 함)
+### ㊲ 신규 화면 — 파일 추가 때 '기존 화면 변경 / 신규 화면' 고르기 (2026-10-28, `6f070d8`)
 
 **배경(사용자 요청)**: 처음부터 신규인 화면이 있는데, 지금은 원본을 넣고 잠가야만 신규 작업을 할 수 있음(원본이 없으면 잠그기도 막힘).
 → 트리에서 파일을 만들 때 종류를 고르고, 신규 화면은 모든 탭이 처음부터 신규.
@@ -469,7 +483,7 @@ grep -rn "지운이름" js/ index.html
   (본문 아래 항목 이력에는 그 항목의 '신규 생성'만 나옴 — 화면 이력과 다른 곳)
 - 확인 필요(브라우저): 서비스 · 오브젝트 · 공통코드관리 탭의 안내 띠 · [+ 추가] 항목의 N · 다시 열기, 보고서, 현황 '점검 필요'에 원본 미등록이 안 뜨는지
 
-### ㊱ 하단 줄 — 운영 반영률 · 글꼴 단추 (2026-10-28, 아직 커밋 안 함)
+### ㊱ 하단 줄 — 운영 반영률 · 글꼴 단추 (2026-10-28, `6f070d8`)
 
 **배경(사용자 요청)**: 왼쪽 영역 아래의 운영 반영 게이지를 전체 화면 맨 아래로 옮기고, 상단의 [글꼴]도 그 줄 오른쪽으로. 단추 글자는 지금 고른 글꼴 이름.
 - `index.html`: `.side-foot` 삭제 → `#app` 맨 아래 `<footer class="foot">`(전체 폭). 왼쪽 `.pf` = '운영 반영' · 게이지 · 수치를 가로 한 줄로, 오른쪽 `#btnFont`(상단에서 옮김). id(`gauge` `gfill` `gtxt` `btnFont`)는 그대로라 `tree.js`는 안 고침
@@ -760,6 +774,25 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
 메뉴를 여는 단추에는 꼭 `data-menu`를 붙입니다(dialog.js 의 바깥 클릭 닫기 예외 — 없으면 열자마자 닫힘).
 스크립트 순서: … `layer-diff.js` → **`entity-data.js`** → **`change-log.js`** → `sql.js` … `screen-lock.js` → **`screen-entity.js`** → **`screen-entity-links.js`** → `screen-grid.js` …
 
+### 3차 이어서 (㊱ ~ ㊹)
+
+| 파일 | 새 전역 |
+|---|---|
+| `fonts.js` (㊱) | `DEFAULT_UI_FONT_NAME` `renderFontButton` |
+| `constants.js` | `SCREEN_KIND_NEW` `SCREEN_KIND_CHOICES` `NEW_SCREEN_LOG_TEXT`(㊲) · `FOLDER_ORDER_FILE`(㊷) · `ICON.clock`(㊳) |
+| `screen-data.js` | `isNewScreen` `newScreenTabLocks`(㊲ — `tabLocksOf`가 신규 화면이면 이것을 돌려줌) · `readFolderOrder` `sortByFolderOrder` `writeFolderOrder` `appendToFolderOrder` `removeFromFolderOrder` `renameInFolderOrder`(㊷) |
+| `dialog.js` | `fillDialogChoices`(㊲) `showChoiceError`(㊶) — `askText`에 `choices`({label, options, value, required, requiredMessage}) · 결과 `choice` |
+| `change-log.js` | `screenLogEntries`(㊳) `legacyUnlockEntries`(㊴) · `LOG_SOURCE_LABELS.screen` · `creationLogText(item, layer, shared)` 셋째 인자 |
+| `screen-sqltabs.js` | `LOG_FILTERS` `SHARED_LOG_FILTERS` `hasScreenLog` `renderAllItemLogs`(㊳) · `logItemsHtml(scope, item)` 인자 추가 · `renderPillTabs`에 `emptyAction`(㊸) |
+| `screen-entity.js` (㊸) | `ENTITY_FILTER_HINTS` `entityEmptyText` `renderEntityFilterCounts` · `ENTITY_FILTER_LABELS.used` = '이 화면 서비스가 쓰는 것' |
+| `tree.js` (㊵) | `matchesTreeName` · `buildTreeBranch`에 `showAll` · **삭제**: `matchesSearch` |
+| `global-search.js` (신규, ㊵) | `GLOBAL_SEARCH_DELAY` `SNIPPET_BEFORE` `SNIPPET_AFTER` `MAX_HITS_PER_SCREEN` `ENTITY_GROUP_TITLE` `globalSearch` `findInText` `snippetHtml` `pushHit` `userLogTexts` `findInDefItem` `searchScreen` `searchEntities` `searchGroupHtml` `runGlobalSearch` `scheduleGlobalSearch` `goToSearchHit` `goToSqlHit` `goToDefHit` `selectFoundText` `goToEntityHit` `openGlobalSearch` `handleGlobalSearchShortcut` `initGlobalSearch` |
+| **삭제** | `screenLogHtml` `openScreenLog` `refreshScreenLog`(screen.js, ㊳) · `unlockLogBannerHtml` `unlockEntriesHtml`(screen-lock.js, ㊴) |
+
+새 요소 id: `#gsModal` `#gsInput` `#gsStatus` `#gsResult` `#gsClose` `#btnGlobalSearch` · `#dlgChoiceRow` `#dlgChoiceLabel` `#dlgChoices` `#dlgChoiceErr` · `footer.foot` `#fontName`.
+삭제된 요소: `#btnScreenLog` `#screenLogModal` `#slClose` `.side-foot`.
+스크립트 순서: … `screen-save.js` → **`global-search.js`** → `report.js` …  · `main.js`에 `initGlobalSearch()`
+
 ---
 
 ## 4. `meta.json` 스키마 변화 (모두 하위 호환)
@@ -837,6 +870,16 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
 { "last": 12 }
 ```
 
+**3차 이어서(㊲ · ㊷)에서 더해진 것**
+
+```jsonc
+// meta.json
+{ "screenKind": "new" }   // ㊲ 신규 화면 (없으면 기존 화면). 모든 탭을 '원본 없이 잠긴' 상태로 읽음 — tabLocks 값은 보지 않음
+// 루트 · 폴더(메뉴 묶음)마다 .order.json (㊷, FOLDER_ORDER_FILE) — 그 아래 메뉴 · 폴더 이름을 만든 순서대로
+["TEST", "PARK"]
+```
+- 화면 이력(`activityLog`)에 신규 화면을 만들 때 `NEW_SCREEN_LOG_TEXT` 한 줄, 신규 화면의 항목 첫 등록 이력도 같은 글(ENTITY 제외)
+
 **없는 필드를 읽을 때의 규칙** — 예전 데이터를 깨뜨리지 않도록 반드시 유지:
 - `rowIds` · `paramIds` 없음(또는 줄 수와 다름) → 순서대로 `L0, L1 …` (`rowIdsOf`) — 원본과 신규가 같은 순서끼리 짝지어짐
 - `<dir>/asis.json` 없음 → 예전 `items.json`(더 예전 파일)을 원본으로 / `<dir>/tobe.json` 없음 → 잠긴 화면은 원본 복사, 아니면 빈 목록
@@ -848,10 +891,24 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
 - `activityLog` 없음 → 화면 이력은 상태 변경(`statusLog`)만
 - `entityIds` 없음 → 연결한 ENTITY 없음 / `.entity/entities.json` 없음 → ENTITY 없음
 - `ticket` 없음 → 화면을 열 때 새 번호를 붙임
+- `screenKind` 없음 → 기존 화면 (예전 화면 모두)
+- `.order.json` 없음 → 그 폴더는 이름순. 파일에 없는 이름(앱 밖에서 만든 것 등)은 적힌 것들 뒤에 이름순
 
 ---
 
 ## 5. 확인이 필요한 것 (브라우저에서 직접)
+
+### ㊱ ~ ㊹ 확인 — 문법 · 전역 충돌 검사와 node 시험만 함 (브라우저 확인은 아래 '확인됨' 말고 아직)
+
+- [x] 신규 화면 만들기 → SQL 등록 → 화면 이력에 '신규 화면으로 만듦 (원본 없음)' (2026-10-28 사용자 확인 — 당시는 [이력] 창, 지금은 항목 이력 [화면])
+- [ ] **하단 줄(㊱ ㊹)** — 운영 반영 · 게이지 · 수치 한 줄, 오른쪽 글꼴 단추(아이콘 · 이름 · ▾), 글꼴 바꾸면 이름이 바로 바뀜, 저장 바와 안 겹침
+- [ ] **신규 화면(㊲)** — 모든 탭 안내 띠 '신규 화면 · 원본 없음', 자물쇠 없음, [+ 추가] 항목 N, SQL 탭 '왼쪽에 원본…' 줄 없음, 상단 '신규 화면'(주황), 보고서 '신규 화면 (원본 없음)', 현황 '점검 필요'에 원본 미등록이 안 뜸
+- [ ] **파일 추가(㊶)** — 화면 종류 아무것도 안 고른 상태 → [추가] 누르면 알림 + 붉은 강조, 고르면 추가됨
+- [ ] **이력(㊳ ㊴)** — 하단 이력 [전체]에 [화면](상태 변경 · 삭제 · 잠금 · 잠금 풀기) 섞임, [화면] 거르기, 상태 바꾸면 바로 보임, ENTITY 탭엔 [화면] 없음, 탭 위 잠금 해제 이력 띠 없음, 예전 데이터의 잠금 풀기도 [화면]에 보임
+- [ ] **검색(㊵)** — 트리는 이름만(폴더 이름이 맞으면 아래 모두), Ctrl+Shift+F(SQL 편집기 안에서도) · 결과 눌러 이동(SQL 글자 선택 · 서비스 항목 · ENTITY), 화면이 많을 때 속도
+- [ ] **트리 순서(㊷)** — 추가 · 복사 → 맨 뒤, 이름 변경 → 같은 자리, 이동 → 옮겨 간 곳 맨 뒤, 삭제
+- [ ] **ENTITY(㊸)** — [전체 n] [이 화면 서비스가 쓰는 것 n] 개수, 빈 목록 문구 두 가지 + [전체 보기], 잠그기 전 띠 주황
+- [ ] **자잘한 것(㊹)** — 이력 날짜 연한 색 · 괄호 없음, '원본 변경 없음', 상태 선택 상자 숫자 없음, [검색] 회색 바탕 · [소스 비교] 테두리 · 아이콘
 
 ### 오른쪽 영역 제거 (㉟) — 아직 확인 안 함
 
@@ -949,6 +1006,15 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
 
 ## 6. 남은 일 / 논의할 것
 
+### ㊱ ~ ㊹에서 생긴 것
+
+1. **이미 만든 화면의 종류 바꾸기** — 기존 ↔ 신규를 바꾸는 기능 없음(파일 추가 때만 고름). 필요하면 '신규 내용이 비어 있을 때만'처럼 조건을 정해야 함
+2. **트리에서 신규 화면 표시** — 지금은 화면을 열어야 알 수 있음(상단 '신규 화면'). 트리 이름 옆 작은 표시가 필요할지
+3. **전체 검색 속도** — 검색할 때마다 모든 화면 파일을 읽음. 화면이 수백 개면 느릴 수 있음 → 그때 읽은 내용을 잠시 기억(캐시)하는 방안
+4. **ENTITY 빈 목록 문구** — 서비스 유형을 조회 → 저장으로 바꾼 직후에는 [이 화면 서비스가 쓰는 것]의 문구가 바로 안 바뀜(보기를 바꾸거나 연결을 바꾸면 맞게 나옴)
+5. **예전 폴더의 트리 순서** — 순서 파일(.order.json) 전부터 있던 폴더는 이름순. 원하면 Windows 생성 시각으로 한 번 정리 가능(앱에서는 못 함 — 브라우저가 생성 시각을 안 줌)
+6. **신규 화면의 항목 첫 이력** — '신규 화면으로 만듦 (원본 없음)'(사용자가 고른 문구)이라 [전체]에서 [화면]의 같은 글과 두 줄로 보임([시스템] / [화면] 꼬리표로만 구분)
+
 ### 3차에서 생긴 것 (㉓ ~ ㉟)
 
 - **ENTITY 에 표가 필요한지** (㉞) — 사용자 확인 중. 필요하면 `ENTITY_DEF.grids` + `GRID_COLUMNS['entity.<키>']`
@@ -983,6 +1049,15 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
 ---
 
 ## 7. 변경된 파일
+
+### 3차 이어서 (커밋 `6f070d8` ㊱ ~ ㊷ · `7fe335d` ㊸ ㊹)
+
+```
+신규: js/global-search.js
+수정: index.html (하단 줄 · [검색] 단추 · #gsModal · #dlgChoiceRow · 스크립트 · [이력] 창 삭제) css/app.css README.md HANDOFF.md
+      js/constants.js  js/screen-data.js  js/dialog.js  js/fonts.js  js/main.js  js/tree.js  js/change-log.js  js/report.js
+      js/screen.js  js/screen-sqltabs.js  js/screen-save.js  js/screen-lock.js  js/screen-entity.js  js/screen-entity-links.js
+```
 
 ### 3차 (커밋 `82edc18` ㉓ · `9208175` ㉔ ㉕ · `314e941` ㉖ ~ ㉛ · `1a9af5b` ㉜ ~ ㉟)
 

@@ -21,7 +21,7 @@
 | `js/fs.js` | 폴더·파일 읽기/쓰기, 해시, 경로 정리 |
 | `js/screen-data.js` | 화면 폴더 데이터 읽기: 화면 찾기, SQL 블록 읽기, 정의서 원본/신규 읽기 `loadDefLayers`, 원본 변경 확인 `findChangedFiles` |
 | `js/entity-data.js` | 프로젝트 공통 ENTITY 데이터(루트 `.entity/entities.json`): 읽기 · 저장 · 원본 해시 · 쓰는 서비스 찾기 |
-| `js/screen-entity.js` | ENTITY 탭: ENTITY 마다 원본 잠금 · 보기(이 화면에서 쓰는 것/전체) · 사용하는 서비스 · 추가/삭제 · 등록 |
+| `js/screen-entity.js` | ENTITY 탭: ENTITY 마다 원본 잠금 · 보기(이 화면 서비스가 쓰는 것/전체) · 사용하는 서비스 · 추가/삭제 · 등록 |
 | `js/screen-entity-links.js` | 저장 서비스의 '사용 ENTITY' 연결(고르기 · 새로 만들기 · 연결 풀기 · ENTITY 탭으로 이동), 빠뜨림 경고 |
 | `js/change-log.js` | 시스템 이력: 등록할 때 항목마다 '신규 생성' · '수정 · 무엇이 이전 → 이후로' 자동 기록, 화면 이력(상태 변경 · 삭제 · 잠금)을 항목 이력에 섞어 보일 모양으로 `screenLogEntries` |
 | `js/layer-diff.js` | 원본과 신규 비교 계산(화면 요소는 안 건드림): 정의 칸 · 표(줄 id 로 짝) · 항목 상태 · 삭제된 항목 |
@@ -248,7 +248,7 @@ SQL 탭과 같은 모양입니다(`js/screen-defs.js`, 탭 줄·이력은 `scree
 - **저장 서비스**는 본문에 '사용 ENTITY' 영역이 나옵니다: [+ ENTITY 연결](있는 ENTITY 고르기 · 새로 만들기), 이름표를 누르면 ENTITY 탭으로, × 로 연결 풀기.
   연결은 서비스 항목의 `entityIds` — 원본/신규 비교 · 시스템 이력에 그대로 들어갑니다. 저장 서비스인데 연결이 없으면 탭에 ⚠, 등록할 때 확인합니다.
 - **ENTITY 는 여러 화면의 여러 서비스가 함께 쓰므로** 화면 폴더가 아니라 루트 `.entity/entities.json`에 한 벌만 둡니다. 각 화면의 **ENTITY 탭**은 그것을 보고 고치는 창입니다(여기서 고치면 모든 화면에 반영).
-  - 보기: [전체](처음) · [이 화면에서 쓰는 것](이 화면 서비스가 연결한 것). [사용하는 서비스]로 쓰는 곳을 찾아 바로 이동합니다.
+  - 보기: [전체](처음) · [이 화면 서비스가 쓰는 것](이 화면 서비스가 연결한 것). [사용하는 서비스]로 쓰는 곳을 찾아 바로 이동합니다.
   - **원본 잠금은 ENTITY 마다**: 추가할 때 '기존 ENTITY(원본부터)' / '새 ENTITY(원본 없음)'를 고르고, 기존 ENTITY 는 본문 위 [원본 등록 후 잠그기]로 잠근 뒤 신규를 고칩니다(원본과 다른 곳 표시는 다른 탭과 같음).
   - 쓰는 서비스가 있으면 지울 수 없습니다. 정의 칸: 화면표시명 · 이력관리 유형 코드 · 단위업무코드 · 작성자 유형 · 로그사용여부(`ENTITY_DEF.info`). 표는 아직 없음
 - 데이터: `[{id, asis: {title, info, grids, rowIds} | null, tobe: … | null, locked, savedAt, hash, unlockLog, log}]` — `entity-data.js` 머리 주석 참고

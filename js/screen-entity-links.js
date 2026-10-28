@@ -57,7 +57,7 @@ function entityLinksHtml(item, readOnly) {
 /** 서비스 항목 요소 */
 const serviceElementOf = itemId => $(`#defs-service > .blk[data-id="${itemId}"]`);
 
-/** 연결이 바뀐 뒤: 이름표 · ENTITY 탭(이 화면에서 쓰는 것) · 표시 다시 그림 */
+/** 연결이 바뀐 뒤: 이름표 · ENTITY 탭(이 화면 서비스가 쓰는 것) · 표시 다시 그림 */
 function afterEntityLinkChange(itemId) {
   const item = findDefItem('service', itemId);
   const element = serviceElementOf(itemId);

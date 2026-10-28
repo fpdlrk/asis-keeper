@@ -4,7 +4,7 @@
      - 모양은 정의서 탭과 같음: ENTITY 하나 = 알약 탭 하나, 본문 = 이름 + 정의 칸 + 표(ENTITY_DEF) + 이력
      - 원본 잠금은 ENTITY 마다: 본문 위 안내 띠의 [원본 등록 후 잠그기] / [잠금 풀기]
          원본 단계 → 원본을 고침 / 잠근 뒤 → 신규를 고치고 원본과 다른 곳을 표시 / 원본 없는 새 ENTITY → 처음부터 신규
-     - 보기: [전체](처음) · [이 화면에서 쓰는 것](이 화면 서비스가 연결한 ENTITY)
+     - 보기: [전체](처음) · [이 화면 서비스가 쓰는 것](이 화면 서비스가 연결한 ENTITY)
      - [사용하는 서비스]: 프로젝트에서 이 ENTITY 를 쓰는 서비스 목록 → 누르면 그 화면의 그 서비스로
      - 삭제: 쓰는 서비스가 있으면 막음
      - 등록: 저장 바 [등록] (영역 'entity') → saveEntityTab
@@ -15,8 +15,12 @@
      entityFilter  : 'all'(처음) | 'used'
    ========================================================================== */
 
-/* 보기 이름 */
-const ENTITY_FILTER_LABELS = {all: '전체', used: '이 화면에서 쓰는 것'};
+/* 보기 이름 (단추에는 뒤에 개수가 붙음) · 마우스를 올리면 보이는 설명 */
+const ENTITY_FILTER_LABELS = {all: '전체', used: '이 화면 서비스가 쓰는 것'};
+const ENTITY_FILTER_HINTS = {
+  all: '프로젝트의 모든 ENTITY 를 봅니다',
+  used: '이 화면의 저장 서비스에 [+ ENTITY 연결]로 연결한 ENTITY 만 봅니다'
+};
 
 /** 열린 화면의 ENTITY 찾기 */
 const findEntity = id => app.screen.entities.find(record => record.id === id);
@@ -41,7 +45,7 @@ function entityPhaseHtml(record) {
       + `<button type="button" class="btn btn-s" data-entity-unlock="${id}" title="사유를 남기면 이 ENTITY 의 원본을 다시 고칠 수 있습니다">${ICON.unlock}잠금 풀기</button></div>`;
   }
   const reopened = record.unlockLog.length > 0;
-  return `<div class="banner note">${ICON.info}<b>${reopened ? '잠금이 풀려 있습니다 · 원본 수정 중' : '원본 단계'}</b>`
+  return `<div class="banner pre-lock">${ICON.info}<b>${reopened ? '잠금이 풀려 있습니다 · 원본 수정 중' : '원본 단계'}</b>`
     + `<span class="muted">${reopened ? '원본을 고친 뒤 다시 잠가 주세요. 신규 작업 내용은 그대로 보관되어 있습니다.' : '이 ENTITY 의 원본을 넣고 잠그세요. 잠근 뒤부터 신규 작업을 합니다.'}</span><span class="sp"></span>`
     + `<button type="button" class="btn btn-s btn-primary" data-entity-lock="${id}">${reopened ? '고친 원본 다시 잠그기' : '원본 등록 후 잠그기'}</button></div>`;
 }
@@ -66,7 +70,7 @@ function entityItemHtml(record) {
 function entityPanelInnerHtml() {
   const filter = app.screen.entityFilter;
   const filterButtons = Object.entries(ENTITY_FILTER_LABELS)
-    .map(([value, label]) => `<button type="button" class="${value === filter ? 'on' : ''}" data-entity-filter="${value}">${label}</button>`).join('');
+    .map(([value, label]) => `<button type="button" class="${value === filter ? 'on' : ''}" data-entity-filter="${value}" title="${ENTITY_FILTER_HINTS[value]}">${label}</button>`).join('');
   return `<div class="phase"><div class="banner note">${ICON.info}<b>프로젝트 공통 ENTITY</b>`
     + `<span class="muted">여기서 고치면 이 ENTITY 를 쓰는 모든 화면에 반영됩니다. 원본은 ENTITY 마다 따로 잠급니다.</span><span class="sp"></span>`
     + `<span class="seg" role="group" aria-label="보기">${filterButtons}</span></div></div>`
@@ -153,12 +157,31 @@ function renderEntityTabs() {
     activeId: screen.activeDef.entity,
     removable: true,
     addLabel: '+ ENTITY 추가',
-    emptyText: screen.entityFilter === 'used'
-      ? '이 화면의 서비스가 쓰는 ENTITY 가 없습니다. 위쪽 [전체]에서 보거나, 서비스의 [+ ENTITY 연결]로 연결하세요.'
-      : '아직 ENTITY 가 없습니다. 오른쪽 위 [+ ENTITY 추가]로 넣어 주세요.'
+    emptyText: entityEmptyText(),
+    emptyAction: screen.entityFilter === 'used' && screen.entities.length ? {label: '전체 보기', data: {'entity-filter': 'all'}} : null
   });
+  renderEntityFilterCounts();
   showActiveEntity();
   refreshEntityTabMarks();
+}
+
+/** 보이는 ENTITY 가 없을 때 안내 — 보기 · 저장 서비스가 있는지에 따라 */
+function entityEmptyText() {
+  if (app.screen.entityFilter !== 'used') return '아직 ENTITY 가 없습니다. 오른쪽 위 [+ ENTITY 추가]로 넣어 주세요.';
+  const hasSaveService = readDefInputs('service').some(item => comparableValue((item.info || {}).serviceType) === SERVICE_TYPE_SAVE);
+  return hasSaveService
+    ? '이 화면의 저장 서비스에 연결한 ENTITY 가 없습니다. 서비스 탭에서 [+ ENTITY 연결]로 연결하면 여기에 보입니다.'
+    : '이 화면에는 저장 서비스가 없어 쓰는 ENTITY 가 없습니다.';
+}
+
+/** 보기 단추 글자에 개수 붙이기 — [전체 12] [이 화면 서비스가 쓰는 것 3] (연결이 바뀌면 renderEntityTabs 가 다시 부름) */
+function renderEntityFilterCounts() {
+  const all = app.screen.entities.map(record => record.id);
+  const used = usedEntityIds();
+  const counts = {all: all.length, used: all.filter(id => used.has(id)).length};
+  $$('[data-entity-filter]').forEach(button => {
+    if (button.closest('.seg')) button.textContent = `${ENTITY_FILTER_LABELS[button.dataset.entityFilter]} ${counts[button.dataset.entityFilter]}`;
+  });
 }
 
 /** 고른 ENTITY 만 보이게 */
@@ -184,7 +207,7 @@ function activateEntityTab(id) {
   renderMiniBar();
 }
 
-/** 보기 바꾸기 ([이 화면에서 쓰는 것] / [전체]) */
+/** 보기 바꾸기 ([이 화면 서비스가 쓰는 것] / [전체]) */
 function setEntityFilter(value) {
   app.screen.entityFilter = value;
   $$('[data-entity-filter]').forEach(button => button.classList.toggle('on', button.dataset.entityFilter === value));

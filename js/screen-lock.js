@@ -40,7 +40,7 @@ function phaseBannerHtml(meta, tab) {
   const head = reopened
     ? `${ICON.info}<b>잠금이 풀려 있습니다 · ${label} 원본 수정 중</b><span class="muted">원본을 고친 뒤 다시 잠가 주세요. 신규 작업 내용은 그대로 보관되어 있습니다.</span>`
     : `${ICON.info}<b>${label} 원본 단계</b><span class="muted">이 탭에 원본을 넣고 잠그세요. 잠근 뒤부터 이 탭은 신규 작업을 합니다.</span>`;
-  return `<div class="banner note">${head}<span class="sp"></span><button type="button" class="btn btn-s btn-primary" data-lock-tab="${tab}">`
+  return `<div class="banner pre-lock">${head}<span class="sp"></span><button type="button" class="btn btn-s btn-primary" data-lock-tab="${tab}">`
     + `${reopened ? '고친 원본 다시 잠그기' : '원본 등록 후 잠그기'}</button></div>`;
 }
 
@@ -257,7 +257,7 @@ async function verifyIntegrity() {
   const reopened = reopenedTabs(screen.meta).map(layerTabLabel);
   const reopenedTag = reopened.length ? `<span class="tag warn">${ICON.unlock}잠금 해제 중: ${escapeHtml(reopened.join(', '))}</span>` : '';
   if (isNewScreen(screen.meta)) {
-    badge.innerHTML = '<span class="tag ok">신규 화면</span>';
+    badge.innerHTML = '<span class="tag new-screen" title="원본 없이 처음부터 새로 만드는 화면입니다">신규 화면</span>';
     $('#warn').innerHTML = '';
     return;
   }

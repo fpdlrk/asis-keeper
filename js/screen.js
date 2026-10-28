@@ -61,7 +61,7 @@ function createScreenState(path, dir, meta) {
     activeDef: {},        // 정의서 탭(과 'entity') → 지금 보고 있는 항목 id
     entities: [],         // 프로젝트 공통 ENTITY (루트의 ENTITY_FILE — entity-data.js · screen-entity.js)
     savedEntities: [],    // ENTITY 의 마지막 등록 상태
-    entityFilter: 'all',  // ENTITY 탭 보기: 'all'(전체, 처음) | 'used'(이 화면에서 쓰는 것) — 처음부터 'used' 면 연결 전 ENTITY 가 안 보여 사라진 것처럼 보임
+    entityFilter: 'all',  // ENTITY 탭 보기: 'all'(전체, 처음) | 'used'(이 화면 서비스가 쓰는 것) — 처음부터 'used' 면 연결 전 ENTITY 가 안 보여 사라진 것처럼 보임
     goneRows: {},         // 표 id → 원본에만 있는 줄 [{id, cells}] (삭제된 줄 되살리기용, screen-changes.js)
     removedTobeBlocks: [],              // 삭제한 신규 블록 (등록할 때 파일도 지움)
     removedAsisBlocks: [],              // 잠금을 푼 뒤 삭제한 등록된 기존 블록 (다시 잠글 때 파일도 지움)

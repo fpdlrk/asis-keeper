@@ -57,10 +57,11 @@ function pillTabHtml(barId, entry, removable) {
  * 탭 줄 그리기
  * @param {string} barId 탭 줄 id
  * @param {{id: string, title: string}[]} entries 화면 순서대로
- * @param {object} opt activeId(고른 탭), removable(× 표시), addLabel([+ …] 단추 글자, '' 이면 단추 없음), emptyText(항목이 없을 때 안내)
+ * @param {object} opt activeId(고른 탭), removable(× 표시), addLabel([+ …] 단추 글자, '' 이면 단추 없음), emptyText(항목이 없을 때 안내),
+ *   emptyAction(안내 아래 단추 {label, data: {이름: 값}} — 누르면 화면 클릭 처리(handleScreenClick)가 data 로 받음)
  *   [▾ 전체]의 data-menu 는 누른 클릭으로 메뉴가 바로 닫히지 않게 하는 표시(dialog.js)
  */
-function renderPillTabs(barId, entries, {activeId, removable, addLabel, emptyText}) {
+function renderPillTabs(barId, entries, {activeId, removable, addLabel, emptyText, emptyAction}) {
   const list = $('#tabs-' + barId);
   if (!list) return;
   list.innerHTML = entries.map(entry => pillTabHtml(barId, entry, removable)).join('');
@@ -74,6 +75,10 @@ function renderPillTabs(barId, entries, {activeId, removable, addLabel, emptyTex
   const empty = $('#tabsEmpty-' + barId);
   empty.hidden = entries.length > 0;
   empty.textContent = emptyText;
+  if (emptyAction) {
+    const attrs = Object.entries(emptyAction.data).map(([name, value]) => `data-${name}="${escapeHtml(value)}"`).join(' ');
+    empty.insertAdjacentHTML('beforeend', `<div class="empty-act"><button type="button" class="btn btn-s" ${attrs}>${escapeHtml(emptyAction.label)}</button></div>`);
+  }
   markActivePillTab(barId, activeId);
   updatePillTabOverflow(barId);
 }

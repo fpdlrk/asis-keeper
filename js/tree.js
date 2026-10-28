@@ -217,7 +217,7 @@ async function renderTree() {
   renderStatusSummary();
 }
 
-/** 상태 선택 상자(항목별 화면 수)와 운영 반영률 표시 갱신 */
+/** 상태 선택 상자(고른 상태 · 색)와 운영 반영률 표시 갱신 */
 function renderStatusSummary() {
   const counts = app.statusCounts;
   const total = counts.reduce((sum, n) => sum + n, 0);
@@ -226,7 +226,7 @@ function renderStatusSummary() {
   const select = $('#stFilter');
   for (const option of select.options) {
     const index = option.value === 'all' ? null : Number(option.value);
-    option.textContent = index === null ? `전체 ${total}` : `${STATUS_LIST[index]} ${counts[index]}`;
+    option.textContent = index === null ? '전체' : STATUS_LIST[index];   // 개수는 붙이지 않음 (화면 수는 운영 반영률 · 현황에서 봄)
   }
   select.value = app.statusFilter === null ? 'all' : String(app.statusFilter);
   select.className = 'stf' + (app.statusFilter === null ? '' : ' s' + app.statusFilter);

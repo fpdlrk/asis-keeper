@@ -126,10 +126,7 @@ async function saveSection(section) {
   await saveSectionData(section);
   const container = section === 'sql' ? $('#blocks-' + layerOf('sql')) : (section in DEF_TABS || section === 'entity' ? $('#defs-' + section) : null);
   if (container) container.querySelectorAll('table.grid').forEach(removeEmptyGridRows);
-  if (section === 'sql') screen.blocks[layerOf('sql')].forEach(block => renderItemLog('sql', layerOf('sql'), block));
-  if (section in DEF_TABS) screen.defItems[section].forEach(item => renderItemLog('def', section, item));
-  if (section === 'entity') screen.entities.forEach(record => renderItemLog('entity', 'entity', record));
-  refreshScreenLog();
+  renderAllItemLogs();   // 이 영역의 새 이력 + 화면 이력(항목 삭제 등)은 모든 항목의 목록에 보이므로 전부 다시 그림
 }
 
 /** 영역 하나의 데이터 저장 (saveSection 이 부름) */
@@ -221,7 +218,7 @@ async function changeStatus(statusIndex) {
       await saveMeta();
       $('#stSel').className = 'stpill s' + statusIndex;
       renderMiniBar();
-      refreshScreenLog();
+      renderAllItemLogs();   // 상태 변경은 항목 이력의 [화면]에 보임
       await renderTree();
     });
     toast('상태: ' + statusName);
@@ -243,7 +240,6 @@ function handleScreenClick(e) {
 
   if (button.id === 'btnSaveAll') saveAllChanges();
   else if (button.id === 'btnDiscard') discardChanges();
-  else if (button.id === 'btnScreenLog') openScreenLog();          // 상태 옆 [이력] → 화면 이력 창
   else if (data.lockTab) lockTab(data.lockTab);                  // 탭 위 [원본 등록 후 잠그기]
   else if (data.unlockTab) unlockTab(data.unlockTab);            // 탭 위 [잠금 풀기]
   else if (data.add) addGridRow(data.add);                       // 표 [+ 행 추가]
@@ -295,7 +291,6 @@ function handleSaveShortcut(e) {
 function initScreen() {
   const main = $('#main');
   main.addEventListener('click', handleScreenClick);
-  $('#slClose').onclick = () => { $('#screenLogModal').hidden = true; };
   main.addEventListener('change', e => {
     if (e.target.id === 'stSel') changeStatus(Number(e.target.value));
     else if (e.target.dataset.info === 'serviceType' && e.target.closest('#defs-service')) handleServiceTypeChange(e.target);   // 저장 서비스면 ENTITY 영역

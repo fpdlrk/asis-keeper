@@ -26,6 +26,11 @@ const layerOf = tab => (isTabLocked(tab) ? 'tobe' : 'asis');
 function phaseBannerHtml(meta, tab) {
   const lock = tabLocksOf(meta)[tab];
   const label = layerTabLabel(tab);
+  // 신규 화면: 원본이 없어 잠그기 · 잠금 풀기 단추가 없음
+  if (isNewScreen(meta)) {
+    return `<div class="banner note">${ICON.info}<b>신규 화면 · 원본 없음</b>`
+      + `<span class="muted">처음부터 새로 만드는 화면이라 원본을 넣거나 잠그지 않습니다. ${label} 신규를 바로 작성하세요.</span></div>`;
+  }
   if (lock.locked) {
     return `<div class="banner note">${ICON.info}<b>${label} 원본 잠김 · 신규 작업 중</b>`
       + `<span class="muted">${escapeHtml(lock.savedAt)} 등록. 원본과 다른 곳은 색으로 표시됩니다.</span><span class="sp"></span>`
@@ -39,24 +44,11 @@ function phaseBannerHtml(meta, tab) {
     + `${reopened ? '고친 원본 다시 잠그기' : '원본 등록 후 잠그기'}</button></div>`;
 }
 
-/** 잠금 해제 이력 띠 — 그 탭의 잠금을 푼 적이 없으면 아무것도 그리지 않습니다 (해제 중·다시 잠근 뒤 모두 남음) */
-const unlockLogBannerHtml = (meta, tab) => unlockEntriesHtml(tabLocksOf(meta)[tab].unlockLog);
-
-/** 잠금 해제 이력 띠 (탭 · ENTITY 가 함께 씀) — 이력이 없으면 '' */
-function unlockEntriesHtml(entries) {
-  if (!entries.length) return '';
-  const items = entries.map(entry => `<li>${escapeHtml(formatDateTime(entry.at))}`
-    + `<span class="sep">·</span>${escapeHtml(entry.by || '-')}`
-    + `<span class="sep">·</span><b>${escapeHtml(entry.reason || '')}</b>`
-    + (entry.relockedAt
-      ? `<span class="ul-end">${escapeHtml(formatDateTime(entry.relockedAt))} 다시 잠금</span>`
-      : `<span class="ul-end open">아직 잠그지 않음</span>`)
-    + `</li>`).join('');
-  return `<div class="banner warn unlocklog">${ICON.unlock}<ul aria-label="잠금 해제 이력">${items}</ul></div>`;
-}
-
-/** 탭 맨 위: 단계 안내 + 잠금 해제 이력 */
-const tabPhaseHtml = tab => `<div class="phase">${phaseBannerHtml(app.screen.meta, tab)}${unlockLogBannerHtml(app.screen.meta, tab)}</div>`;
+/**
+ * 탭 맨 위: 단계 안내
+ * 잠금 · 잠금 풀기(사유) 기록은 따로 띠로 보이지 않고 항목 이력의 [화면]에 나옵니다 (change-log.js screenLogEntries)
+ */
+const tabPhaseHtml = tab => `<div class="phase">${phaseBannerHtml(app.screen.meta, tab)}</div>`;
 
 /* ======================= 탭마다 다른 부분 ======================= */
 
@@ -167,7 +159,7 @@ async function lockTab(tab) {
   const ok = await askConfirm({
     title: `${label} ${reopened ? '고친 원본 다시 잠그기' : '원본 등록 후 잠그기'}`,
     desc: (reopened
-      ? `다시 잠그면 지금 ${label} 원본이 새 기준이 되고, 고칠 수 없습니다.\n잠금을 푼 동안 새로 넣은 원본 항목은 신규 쪽에도 복사됩니다.\n잠금 해제 이력은 그대로 남습니다.`
+      ? `다시 잠그면 지금 ${label} 원본이 새 기준이 되고, 고칠 수 없습니다.\n잠금을 푼 동안 새로 넣은 원본 항목은 신규 쪽에도 복사됩니다.\n잠금을 풀 때 남긴 사유는 이력에 그대로 남습니다.`
       : `${label} 탭의 원본을 등록하고 잠급니다. 잠근 뒤에는 원본을 고칠 수 없습니다.\n원본은 신규 쪽으로 복사되고, 이후 신규를 고치면 원본과 다른 곳이 표시됩니다.`)
       + '\n등록하지 않은 다른 변경도 함께 등록됩니다. 계속할까요?',
     okText: reopened ? '다시 잠그기' : '등록 후 잠그기'
@@ -211,6 +203,7 @@ async function lockTab(tab) {
 async function unlockTab(tab) {
   const screen = app.screen;
   if (!screen || !isTabLocked(tab)) return;
+  if (isNewScreen(screen.meta)) return toast('신규 화면은 원본이 없어 잠금을 풀 수 없습니다.');
   const label = layerTabLabel(tab);
   if (hasUnsavedChanges()) {
     const saveFirst = await askConfirm({
@@ -225,7 +218,7 @@ async function unlockTab(tab) {
     desc: '원본은 변경 전 상태를 그대로 남겨 두기 위해 잠가 둡니다.\n잘못 넣은 원본을 바로잡거나 원본을 더 넣을 때만 잠금을 풀어 주세요.\n잠금을 푼 동안 이 탭의 신규 작업 내용은 그대로 보관됩니다.',
     label: '잠금을 푸는 사유 (필수)',
     placeholder: '예: 등록 당시 누락된 WHERE 절 보완 (티켓 A-123)',
-    hint: `적으신 사유는 이 화면 ${label} 탭의 ‘잠금 해제 이력’에 남고, 지울 수 없습니다.`,
+    hint: `적으신 사유는 이 화면 ${label} 탭 이력([화면])에 남고, 지울 수 없습니다.`,
     okText: '잠금 풀기',
     validate: value => {
       if (!value) return '잠금을 푸는 사유를 입력해 주세요.';
@@ -263,6 +256,11 @@ async function verifyIntegrity() {
   const screen = app.screen;
   const reopened = reopenedTabs(screen.meta).map(layerTabLabel);
   const reopenedTag = reopened.length ? `<span class="tag warn">${ICON.unlock}잠금 해제 중: ${escapeHtml(reopened.join(', '))}</span>` : '';
+  if (isNewScreen(screen.meta)) {
+    badge.innerHTML = '<span class="tag ok">신규 화면</span>';
+    $('#warn').innerHTML = '';
+    return;
+  }
   if (!anyTabLocked(screen.meta)) {
     badge.innerHTML = reopenedTag || '<span class="tag">원본 단계</span>';
     $('#warn').innerHTML = '';
@@ -272,7 +270,7 @@ async function verifyIntegrity() {
   if (screen !== app.screen) return;   // 확인하는 사이 다른 화면으로 이동함
   badge.innerHTML = (changed.length
     ? `<span class="tag bad">${ICON.warn}원본 변경 감지</span>`
-    : `<span class="tag ok">${ICON.check}원본 일치</span>`) + reopenedTag;
+    : `<span class="tag ok">${ICON.check}원본 변경 없음</span>`) + reopenedTag;
   $('#warn').innerHTML = changed.length
     ? `<div class="banner bad">${ICON.warn}<div><b>잠글 때와 다른 원본이 있습니다.</b> 이 원본으로 복원하기 전에 확인하세요.`
       + `<ul>${changed.map(item => `<li><code>${escapeHtml(item.path + ' (' + item.reason + ')')}</code></li>`).join('')}</ul></div></div>`

@@ -22,6 +22,9 @@ const LEGACY_STATUS_NAMES = {'작업중': '진행', '개발배포': '개발', '�
 const TICKET_DIGITS = 6;
 /* 마지막으로 낸 번호를 기억하는 루트의 파일 — 화면을 지워도 그 번호를 다시 쓰지 않기 위함 */
 const TICKET_SEQ_FILE = '.ticket-seq.json';
+/* 트리 순서 파일 — 폴더(루트 포함)마다 그 아래 메뉴 · 폴더를 만든 순서대로 이름을 적어 둠 (screen-data.js listChildFolders)
+   브라우저 폴더 기능은 만든 시각을 알려 주지 않으므로 직접 기록합니다. '.' 로 시작해 트리에 안 나옴 */
+const FOLDER_ORDER_FILE = '.order.json';
 
 /* ---- 화면(메뉴) 폴더 규칙 ---- */
 /* 화면 폴더 안에서 데이터를 담는 하위 폴더 이름. 메뉴 이름으로 쓸 수 없고, 트리에도 나오지 않습니다. */
@@ -182,6 +185,16 @@ const defConfigOf = tab => (tab === 'entity' ? ENTITY_DEF : DEF_TABS[tab]);
 
 /* 원본/신규가 있는 탭 (탭마다 원본 잠금이 따로 있음 — screen-data.js tabLocksOf). ENTITY 는 ENTITY 마다 따로 잠금 */
 const LAYER_TABS = ['sql', ...Object.keys(DEF_TABS)];
+
+/* 화면 종류 (meta.screenKind) — 파일 추가 창에서 고름. 없으면 기존 화면(예전 데이터 포함)
+   기존: 탭마다 원본을 넣고 잠근 뒤 신규 작업 / 신규: 원본이 없는 새 화면 — 모든 탭이 처음부터 신규 단계(잠그기 · 잠금 풀기 없음) */
+const SCREEN_KIND_NEW = 'new';
+/* 신규 화면을 만들 때(화면 이력)와 신규 화면의 항목을 처음 등록할 때(항목 이력) 남기는 글 */
+const NEW_SCREEN_LOG_TEXT = '신규 화면으로 만듦 (원본 없음)';
+const SCREEN_KIND_CHOICES = [
+  {value: '', label: '기존 화면 변경', hint: '원본(ASIS)을 넣고 잠근 뒤 신규로 고칩니다'},
+  {value: SCREEN_KIND_NEW, label: '신규 화면', hint: '원본 없이 모든 탭을 처음부터 신규로 작성합니다'}
+];
 /* 예전(화면 하나에 잠금 하나) meta 값 — 읽을 때 탭별 잠금으로 바꾸고, 잠그거나 풀 때 지움 */
 const LEGACY_LOCK_KEYS = ['asisLocked', 'asisSavedAt', 'asisLockedIds', 'hashes', 'asisUnlockLog'];
 
@@ -198,6 +211,7 @@ const ICON = {
   folder: '<svg class="ic" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M1.5 4.5a1 1 0 0 1 1-1h3l1.5 1.5h6.5a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg>',
   caret: '<svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>',
   lock: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+  clock: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',   // 항목 이력 제목
   unlock: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-1.3"/></svg>',
   check: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>',
   upload: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>',

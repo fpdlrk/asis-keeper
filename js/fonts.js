@@ -55,12 +55,28 @@ const fontStackOf = (option, fallback) => option.auto ? option.stack : option.st
 /** 저장된 이름으로 글꼴 후보 찾기 (없으면 기본) */
 const findFontOption = (options, name) => options.find(option => option.name === name) || options[0];
 
-/** 글꼴 적용: CSS 변수(--sans, --mono)와 열려 있는 SQL 편집기 */
+/* 기본 화면 글꼴일 때 하단 글꼴 단추에 쓰는 글꼴 이름 (기본 후보의 stack 과 같은 글꼴) */
+const DEFAULT_UI_FONT_NAME = 'Segoe UI + 맑은 고딕';
+
+/**
+ * 하단 글꼴 단추 글자를 지금 화면 글꼴 이름으로 (누르면 예전처럼 글꼴 설정 창)
+ * @param {object} uiOption   지금 화면 글꼴 후보
+ * @param {object} codeOption 지금 SQL 편집기 글꼴 후보 — 마우스를 올리면 보임
+ */
+function renderFontButton(uiOption, codeOption) {
+  $('#fontName').textContent = uiOption.auto ? DEFAULT_UI_FONT_NAME : uiOption.name;
+  $('#btnFont').title = `글꼴 설정 — 화면: ${uiOption.name} · SQL 편집기: ${codeOption.name}`;
+}
+
+/** 글꼴 적용: CSS 변수(--sans, --mono), 열려 있는 SQL 편집기, 하단 글꼴 단추 글자 */
 function applyFonts(saved) {
-  uiFontStack = fontStackOf(findFontOption(UI_FONT_OPTIONS, saved && saved.ui), UI_FONT_FALLBACK);
-  codeFontStack = fontStackOf(findFontOption(CODE_FONT_OPTIONS, saved && saved.code), CODE_FONT_FALLBACK);
+  const uiOption = findFontOption(UI_FONT_OPTIONS, saved && saved.ui);
+  const codeOption = findFontOption(CODE_FONT_OPTIONS, saved && saved.code);
+  uiFontStack = fontStackOf(uiOption, UI_FONT_FALLBACK);
+  codeFontStack = fontStackOf(codeOption, CODE_FONT_FALLBACK);
   document.documentElement.style.setProperty('--sans', uiFontStack);
   document.documentElement.style.setProperty('--mono', codeFontStack);
+  renderFontButton(uiOption, codeOption);
   if (!app.screen) return;
   for (const [id, editor] of Object.entries(app.screen.editors)) {
     if (!(id in TEXT_EDITOR_HEIGHTS)) editor.setOption('fontFamily', codeFontStack);   // SQL 편집기만

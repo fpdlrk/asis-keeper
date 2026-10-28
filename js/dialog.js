@@ -44,8 +44,10 @@ function prepareDialog(opt, resolve) {
  * @param {object} opt
  *   title, desc, label, value(처음 값), placeholder, okText, hint(아래 안내),
  *   check(체크박스 문구 — 있으면 체크박스 표시), checked(처음 체크 여부, 기본 true),
- *   readonly, mono(고정폭 글꼴), noCancel, validate(값 → 오류 문구, 문제 없으면 '')
- * @returns {Promise<{value: string, checked: boolean} | null>} 취소하면 null
+ *   readonly, mono(고정폭 글꼴), noCancel, validate(값 → 오류 문구, 문제 없으면 ''),
+ *   choices(하나 고르는 칸 — {label, options: [{value, label, hint?}], value: 처음 고른 값(없으면 아무것도 안 고름),
+ *           required: 꼭 골라야 함 — 안 고르고 확인하면 알림 · 고르는 칸 아래 안내를 띄우고 창을 닫지 않음, requiredMessage: 그 안내 글})
+ * @returns {Promise<{value: string, checked: boolean, choice: string} | null>} 취소하면 null (choice 는 choices 가 없으면 '')
  */
 function askText(opt) {
   return new Promise(resolve => {
@@ -65,6 +67,7 @@ function askText(opt) {
     $('#dlgCheckRow').hidden = !opt.check;
     $('#dlgCheckText').textContent = opt.check || '';
     checkbox.checked = opt.checked !== false;
+    fillDialogChoices(opt.choices);
 
     // 확인: 검사에 걸리면 창을 닫지 않고 오류 문구를 보여 줌
     const submit = () => {
@@ -76,7 +79,9 @@ function askText(opt) {
         input.focus();
         return;
       }
-      finish({value, checked: checkbox.checked});
+      const picked = $('#dlgChoices input:checked');
+      if (opt.choices && opt.choices.required && !picked) return showChoiceError(opt.choices.requiredMessage || `${opt.choices.label || '항목'}을(를) 골라 주세요.`);
+      finish({value, checked: checkbox.checked, choice: opt.choices && picked ? picked.value : ''});
     };
     $('#dlgOk').onclick = submit;
     $('#dlgCancel').onclick = () => finish(null);
@@ -84,6 +89,36 @@ function askText(opt) {
     input.focus();
     input.select();
   });
+}
+
+/** 입력 창의 고르는 칸 채우기 (choices 가 없으면 숨김) — askText 의 choices 설명 참고 */
+function fillDialogChoices(choices) {
+  $('#dlgChoiceRow').hidden = !choices;
+  $('#dlgChoiceRow').classList.remove('need');
+  $('#dlgChoiceErr').hidden = true;
+  $('#dlgChoices').innerHTML = '';
+  $('#dlgChoices').onchange = () => {   // 고르면 안내를 바로 지움
+    $('#dlgChoiceRow').classList.remove('need');
+    $('#dlgChoiceErr').hidden = true;
+  };
+  if (!choices) return;
+  $('#dlgChoiceLabel').innerHTML = escapeHtml(choices.label || '') + (choices.required ? ' <em class="req">*</em>' : '');
+  $('#dlgChoices').innerHTML = choices.options.map(option =>
+    `<label class="radio"><input type="radio" name="dlgChoice" value="${escapeHtml(option.value)}"${option.value === choices.value ? ' checked' : ''}>`
+    + `<span>${escapeHtml(option.label)}</span>${option.hint ? `<span class="radio-hint">${escapeHtml(option.hint)}</span>` : ''}</label>`).join('');
+}
+
+/**
+ * 꼭 고르는 칸을 안 골랐을 때: 알림(toast)을 띄우고, 칸을 강조해 아래에도 안내한 뒤 첫 선택지로 커서를 옮김
+ * (브라우저 alert 은 쓰지 않음 — README 코드 규칙 5)
+ */
+function showChoiceError(message) {
+  toast(message);
+  $('#dlgChoiceRow').classList.add('need');
+  $('#dlgChoiceErr').textContent = message;
+  $('#dlgChoiceErr').hidden = false;
+  const first = $('#dlgChoices input');
+  if (first) first.focus();
 }
 
 /**
@@ -94,7 +129,7 @@ function askText(opt) {
 function askConfirm(opt) {
   return new Promise(resolve => {
     const finish = prepareDialog(opt, result => resolve(result === true));
-    ['#dlgLabel', '#dlgInput', '#dlgErr', '#dlgHint', '#dlgCheckRow'].forEach(selector => { $(selector).hidden = true; });
+    ['#dlgLabel', '#dlgInput', '#dlgErr', '#dlgHint', '#dlgCheckRow', '#dlgChoiceRow'].forEach(selector => { $(selector).hidden = true; });
     $('#dlgOk').onclick = () => finish(true);
     $('#dlgCancel').onclick = () => finish(false);
     $('#dlg').onkeydown = e => {
@@ -196,7 +231,7 @@ function createMenuButton(ariaLabel, getItems) {
 /** Esc: 메뉴·모달·입력 창 모두 닫기 */
 function closeOverlays() {
   hideMenu();
-  ['#modal', '#fontModal', '#moveModal', '#diffModal', '#srcDiffModal', '#screenLogModal'].forEach(selector => { $(selector).hidden = true; });
+  ['#modal', '#fontModal', '#moveModal', '#diffModal', '#srcDiffModal', '#gsModal'].forEach(selector => { $(selector).hidden = true; });
   if (closeActiveDialog) closeActiveDialog();
 }
 

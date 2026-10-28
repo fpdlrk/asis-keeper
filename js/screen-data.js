@@ -24,8 +24,50 @@ async function listChildFolders(dir) {
   for await (const [name, handle] of dir.entries()) {
     if (handle.kind === 'directory' && !RESERVED_FOLDER_NAMES.includes(name) && !name.startsWith('.')) names.push(name);
   }
-  return names.sort((a, b) => a.localeCompare(b, 'ko'));
+  return sortByFolderOrder(names, await readFolderOrder(dir));
 }
+
+/* ======================= 트리 순서 (FOLDER_ORDER_FILE) =======================
+   순서 파일에 있는 이름은 적힌 순서대로, 없는 이름(앱 밖에서 만들었거나 순서 파일 전부터 있던 것)은 그 뒤에 이름순으로.
+   순서 파일이 없는 폴더는 예전처럼 이름순이고, 그 안에 처음 무언가를 만들 때 지금 보이는 순서로 파일을 만듭니다. */
+
+/** 폴더의 순서 파일 읽기 (없으면 null) */
+async function readFolderOrder(dir) {
+  const saved = await readJson(dir, FOLDER_ORDER_FILE, null);
+  return Array.isArray(saved) ? saved.filter(name => typeof name === 'string') : null;
+}
+
+/** 이름 목록을 순서 파일대로 정렬 */
+function sortByFolderOrder(names, order) {
+  const rank = new Map((order || []).map((name, i) => [name, i]));
+  return names.sort((a, b) => {
+    const rankA = rank.has(a) ? rank.get(a) : Infinity;
+    const rankB = rank.has(b) ? rank.get(b) : Infinity;
+    return rankA !== rankB ? rankA - rankB : a.localeCompare(b, 'ko');
+  });
+}
+
+/** 순서 파일 쓰기 */
+const writeFolderOrder = (dir, names) => writeJson(dir, FOLDER_ORDER_FILE, names);
+
+/** 새로 만든(복사 · 이동해 온) 메뉴 · 폴더를 맨 뒤로 — 폴더를 만든 뒤에 부름 */
+async function appendToFolderOrder(dir, name) {
+  const names = (await listChildFolders(dir)).filter(other => other !== name);
+  await writeFolderOrder(dir, [...names, name]);
+}
+
+/** 지운(이동해 간) 메뉴 · 폴더를 순서에서 빼기 — 순서 파일이 없으면 할 일 없음 */
+async function removeFromFolderOrder(dir, name) {
+  const order = await readFolderOrder(dir);
+  if (order) await writeFolderOrder(dir, order.filter(other => other !== name));
+}
+
+/**
+ * 이름을 바꾼 메뉴 · 폴더가 같은 자리에 남도록
+ * @param {string[]} namesBefore 바꾸기 전의 순서 (listChildFolders — 바꾸면 예전 이름이 없어져 자리를 알 수 없으므로 미리 받음)
+ */
+const renameInFolderOrder = (dir, namesBefore, oldName, newName) =>
+  writeFolderOrder(dir, namesBefore.map(name => (name === oldName ? newName : name)));
 
 /**
  * 루트 아래 모든 화면 찾기
@@ -170,6 +212,7 @@ const emptyTabLock = () => ({locked: false, savedAt: '', lockedIds: null, hashes
  *   해제 이력은 SQL 탭으로 (예전 잠금은 SQL 원본을 위한 것이었음)
  */
 function tabLocksOf(meta) {
+  if (isNewScreen(meta)) return newScreenTabLocks(meta);
   if (meta.tabLocks) return Object.fromEntries(LAYER_TABS.map(tab => [tab, {...emptyTabLock(), ...(meta.tabLocks[tab] || {})}]));
   const defTabOfPath = path => Object.keys(DEF_TABS).find(tab => path.startsWith(DEF_TABS[tab].dir + '/')) || 'sql';
   const hashEntries = Object.entries(meta.hashes || {});
@@ -181,6 +224,17 @@ function tabLocksOf(meta) {
     unlockLog: tab === 'sql' ? meta.asisUnlockLog || [] : []
   }]));
 }
+
+/** 원본이 없는 신규 화면인지 (파일 추가 때 고름 — SCREEN_KIND_NEW) */
+const isNewScreen = meta => meta.screenKind === SCREEN_KIND_NEW;
+
+/**
+ * 신규 화면의 탭별 잠금 정보: 모든 탭이 '원본 없이 잠긴' 상태 = 처음부터 신규 단계
+ * 저장해 둔 값과 상관없이 언제나 이 모양으로 읽으므로, 메뉴 복사 등으로 tabLocks 가 지워져도 신규 단계가 유지됩니다.
+ * 원본이 없으니 신규 항목은 모두 '신규(N)'로 보이고, 원본 해시는 비어 있습니다.
+ */
+const newScreenTabLocks = meta => Object.fromEntries(LAYER_TABS.map(tab =>
+  [tab, {locked: true, savedAt: meta.createdAt || '', lockedIds: [], hashes: {}, unlockLog: []}]));
 
 /** 탭이 잠겼는지 */
 const isTabLockedIn = (meta, tab) => tabLocksOf(meta)[tab].locked;

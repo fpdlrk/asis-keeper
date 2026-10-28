@@ -19,10 +19,41 @@ const MAX_LOG_DETAILS = 3;
 /* 이력에 적을 값의 최대 글자 수 (긴 값은 … 으로 줄임) */
 const MAX_LOG_VALUE_LENGTH = 40;
 /* 이력의 출처 이름 */
-const LOG_SOURCE_LABELS = {user: '사용자', system: '시스템'};
+/* 이력의 출처 이름 — 화면 = 화면 전체의 이력(상태 변경 · meta.activityLog). 항목 이력 목록에 섞어 보여 줌 (screenLogEntries) */
+const LOG_SOURCE_LABELS = {user: '사용자', system: '시스템', screen: '화면'};
 
 /** 이력 한 줄의 출처 (source 가 없는 예전 이력은 사용자) */
-const logSourceOf = entry => (entry.source === 'system' ? 'system' : 'user');
+const logSourceOf = entry => (entry.source === 'system' || entry.source === 'screen' ? entry.source : 'user');
+
+/**
+ * 화면 전체의 이력을 항목 이력과 같은 모양으로: 상태 변경(meta.statusLog) + 화면의 일(meta.activityLog: 항목 삭제 · 잠금 · 잠금 풀기 · 신규 화면)
+ * 모두 출처 'screen' — 항목 이력 목록의 [화면] (파일에 저장된 값은 그대로, 보여 줄 때만 바꿈)
+ */
+function screenLogEntries(meta) {
+  const statusEntries = (meta.statusLog || []).map(entry =>
+    ({at: entry.at, by: entry.by || meta.worker || '', text: `상태: ${normalizeStatus(entry.status)}`, source: 'screen'}));
+  const activityEntries = (meta.activityLog || []).map(entry => ({...entry, source: 'screen'}));
+  return [...statusEntries, ...activityEntries, ...legacyUnlockEntries(meta)];
+}
+
+/**
+ * 자동 기록(activityLog)이 생기기 전에 푼 잠금 — 탭의 unlockLog 에만 있는 것을 [화면] 이력 모양으로
+ * 지금은 잠금을 풀 때 activityLog 에도 '<탭> 잠금 풀기 (사유: …)'를 남기므로, 같은 글이 이미 있으면 넣지 않음 (두 번 보이지 않게)
+ */
+function legacyUnlockEntries(meta) {
+  const activityTexts = new Set((meta.activityLog || []).map(entry => entry.text));
+  const locks = tabLocksOf(meta);
+  const entries = [];
+  for (const tab of LAYER_TABS) {
+    const label = layerTabLabel(tab);
+    for (const unlock of locks[tab].unlockLog) {
+      if (activityTexts.has(`${label} 잠금 풀기 (사유: ${unlock.reason})`)) continue;
+      entries.push({at: unlock.at, by: unlock.by || '', text: `${label} 잠금 풀기 (사유: ${unlock.reason || ''})`, source: 'screen'});
+      if (unlock.relockedAt) entries.push({at: unlock.relockedAt, by: '', text: `${label} 원본 다시 잠금`, source: 'screen'});
+    }
+  }
+  return entries;
+}
 
 /** 시스템 이력 한 줄 */
 const systemLogEntry = text => ({at: new Date().toISOString(), by: currentWorkerName(), text, source: 'system'});
@@ -40,9 +71,13 @@ function addActivityLog(meta, text) {
   meta.activityLog = [...(meta.activityLog || []), systemLogEntry(text)];
 }
 
-/** 처음 등록할 때의 이력 글: 따로 정해 둔 글(되살림 등) → 없으면 원본 단계 '원본 등록' / 신규 단계 '신규 생성' */
-function creationLogText(item, layer) {
-  const text = item.createdNote || (layer === 'asis' ? '원본 등록' : '신규 생성');
+/**
+ * 처음 등록할 때의 이력 글: 따로 정해 둔 글(되살림 등) → 없으면 원본 단계 '원본 등록' / 신규 화면 NEW_SCREEN_LOG_TEXT / 신규 단계 '신규 생성'
+ * @param {boolean} [shared] 여러 화면이 함께 쓰는 것(ENTITY)인지 — 신규 화면 글을 쓰지 않음
+ */
+function creationLogText(item, layer, shared = false) {
+  const newScreenText = !shared && app.screen && isNewScreen(app.screen.meta) ? NEW_SCREEN_LOG_TEXT : '';
+  const text = item.createdNote || (layer === 'asis' ? '원본 등록' : newScreenText || '신규 생성');
   delete item.createdNote;   // 한 번만 씀 (파일에는 저장하지 않는 값)
   return text;
 }

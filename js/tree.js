@@ -75,40 +75,10 @@ function renderBreadcrumb() {
 /* ======================= 검색 ======================= */
 
 /**
- * 화면이 검색어에 맞는지: 이름·티켓·작업자·원본 위치를 먼저 보고, 없으면 메모·SQL 내용까지 찾음
- * @param {FileSystemDirectoryHandle} dir 화면 폴더
+ * 트리 검색: 파일(화면) · 폴더 이름만 봅니다 (내용 · 티켓 등은 상단 [검색] — global-search.js)
+ * 폴더 이름이 맞으면 그 안의 파일을 모두 보여 줍니다 (buildTreeBranch 의 showAll)
  */
-async function matchesSearch(dir, name, meta) {
-  const query = treeState.query;
-  if (!query) return true;
-  const summary = [name, meta && meta.ticket, meta && meta.worker, meta && meta.origin].filter(Boolean).join('\n').toLowerCase();
-  if (summary.includes(query)) return true;
-  if (!meta) return false;
-  // SQL 정의 · 파라미터는 meta.json 안에 있음
-  const sqlDefinitionText = Object.values(meta.sqlBlocks || {}).flat()
-    .flatMap(block => [...Object.values(block.info || {}), ...(block.params || []).flat()]).join('\n').toLowerCase();
-  if (sqlDefinitionText.includes(query)) return true;
-
-  // 내용까지 찾을 파일: 메모 + 정의서(표 · 예전 글) + SQL 블록 (예전 구조 파일 포함)
-  const files = [
-    ...Object.values(TEXT_FIELD_FILES),
-    ...Object.keys(DEF_TABS).flatMap(defDataFiles),
-    ...Object.values(LEGACY_DEF_FILES).flatMap(legacy => [legacy.grid, ...Object.values(legacy.texts)].filter(Boolean))
-  ];
-  const sqlBlocks = meta.sqlBlocks || {};
-  for (const kind of ['asis', 'tobe']) {
-    for (const block of sqlBlocks[kind] || []) {
-      files.push(block.file);
-      if (block.rb) files.push(block.rb);
-    }
-  }
-  if (!meta.sqlBlocks) files.push('asis/sql.sql', 'tobe/sql.sql');
-  for (const file of files) {
-    const text = await readText(dir, file);
-    if (text && text.toLowerCase().includes(query)) return true;
-  }
-  return false;
-}
+const matchesTreeName = name => !treeState.query || name.toLowerCase().includes(treeState.query);
 
 /* ======================= 트리 ======================= */
 
@@ -184,9 +154,10 @@ function createTreeItem({dir, parentDir, name, path, meta, statusIndex, childLis
  * 트리 한 단계 그리기 (하위는 재귀)
  * @param {number[]} counter 상태별 화면 수를 여기에 더함
  * @param {number} seq 그리기 순번 (바뀌면 중단)
+ * @param {boolean} [showAll] 위 폴더 이름이 검색어에 맞음 → 이 아래는 이름과 상관없이 모두 보여 줌 (상태 필터는 그대로)
  * @returns {Promise<{list: HTMLUListElement, hasVisible: boolean, screenCount: number}>}
  */
-async function buildTreeBranch(dir, path, counter, seq) {
+async function buildTreeBranch(dir, path, counter, seq, showAll = false) {
   const list = document.createElement('ul');
   list.setAttribute('role', 'group');
   let hasVisible = false, screenCount = 0;
@@ -199,11 +170,13 @@ async function buildTreeBranch(dir, path, counter, seq) {
     const statusIndex = meta ? statusIndexOf(meta) : -1;
     if (statusIndex >= 0) { counter[statusIndex]++; screenCount++; }
 
-    const child = await buildTreeBranch(childDir, childPath, counter, seq);
+    const nameMatches = showAll || matchesTreeName(name);
+    const isFolder = !meta;   // meta.json 이 없으면 메뉴 묶음(폴더)
+    const child = await buildTreeBranch(childDir, childPath, counter, seq, isFolder && nameMatches && !!treeState.query);
     screenCount += child.screenCount;
 
     // 상태 필터·검색에 맞지 않아도, 맞는 하위 항목이 있으면 경로를 보여 주기 위해 남김
-    const matches = (app.statusFilter === null || statusIndex === app.statusFilter) && await matchesSearch(childDir, name, meta);
+    const matches = (app.statusFilter === null || statusIndex === app.statusFilter) && nameMatches;
     if (!matches && !child.hasVisible) continue;
     hasVisible = true;
     list.append(createTreeItem({dir: childDir, parentDir: dir, name, path: childPath, meta, statusIndex, childList: child.list, childScreenCount: child.screenCount}));
@@ -318,6 +291,7 @@ async function addSubFolder(target) {
   try {
     await withBusy('폴더를 만드는 중…', async () => {
       await target.dir.getDirectoryHandle(answer.value, {create: true});
+      await appendToFolderOrder(target.dir, answer.value);   // 만든 순서대로 (맨 뒤)
       treeState.closedKeys.delete(target.path.join('/'));   // 새 폴더가 보이도록 상위 폴더를 펼침
       await renderTree();
     });
@@ -327,7 +301,10 @@ async function addSubFolder(target) {
   }
 }
 
-/** 파일(화면 폴더) 추가 — meta.json 을 만들므로 본문에 화면이 열립니다. 티켓번호는 자동으로 붙음 */
+/**
+ * 파일(화면 폴더) 추가 — meta.json 을 만들므로 본문에 화면이 열립니다. 티켓번호는 자동으로 붙음
+ * 화면 종류도 이때 고릅니다(SCREEN_KIND_CHOICES): 신규 화면은 원본 없이 모든 탭이 처음부터 신규 단계 (screen-data.js isNewScreen)
+ */
 async function addSubMenu(target) {
   const answer = await askText({
     title: '파일 추가',
@@ -336,6 +313,7 @@ async function addSubMenu(target) {
     okText: '추가',
     hint: '본문에서 SQL·파일·정의서를 입력하는 화면이 만들어집니다. 묶음만 필요하면 ‘하위 폴더 추가’를 쓰세요.'
       + ' 특수문자 \\ / : * ? " < > | 와 asis, tobe 같은 예약어는 쓸 수 없습니다.',
+    choices: {label: '화면 종류', options: SCREEN_KIND_CHOICES, required: true, requiredMessage: '화면 종류(기존 화면 변경 / 신규 화면)를 골라 주세요.'},   // 기본값 없이 — 무심코 기존 화면으로 만들지 않게 꼭 고르게 함
     check: '만든 뒤 바로 열기',
     checked: true,
     validate: name => !name ? '이름을 입력하세요.' : validateFolderName(name)
@@ -348,14 +326,21 @@ async function addSubMenu(target) {
       const ticket = nextTicket(seq);
       const newDir = await target.dir.getDirectoryHandle(answer.value, {create: true});
       const now = new Date();
-      await writeJson(newDir, 'meta.json', {
+      const meta = {
         ticket,
         status: '요청',
         filesV: FILE_STRUCTURE_VERSION,
         createdAt: now.toLocaleString('ko-KR'),
         statusLog: [{status: '요청', at: now.toISOString()}]
-      });
+      };
+      if (answer.choice === SCREEN_KIND_NEW) {
+        meta.screenKind = SCREEN_KIND_NEW;
+        // 화면 이력 — addActivityLog 는 열린 화면의 작업자를 읽으므로 여기서는 직접 만듦 (화면이 없을 수도 있음)
+        meta.activityLog = [{at: now.toISOString(), by: '', text: NEW_SCREEN_LOG_TEXT, source: 'system'}];
+      }
+      await writeJson(newDir, 'meta.json', meta);
       await saveTicketSequence(seq);
+      await appendToFolderOrder(target.dir, answer.value);   // 만든 순서대로 (맨 뒤)
       treeState.closedKeys.delete(target.path.join('/'));   // 새 메뉴가 보이도록 상위 폴더를 펼침
       if (answer.checked) await openScreen([...target.path, answer.value]);
       else await renderTree();
@@ -375,6 +360,8 @@ async function addSubMenu(target) {
  * @param {string} newName 새 이름
  */
 async function relocateFolder(target, destParent, newName) {
+  const samePlace = await destParent.isSameEntry(target.parent);   // 이름만 바꿈
+  const orderBefore = await listChildFolders(target.parent);       // 이름을 바꿔도 같은 자리에 두기 위해 미리
   const newDir = await destParent.getDirectoryHandle(newName, {create: true});
   try {
     await copyDirectory(target.dir, newDir);
@@ -383,6 +370,13 @@ async function relocateFolder(target, destParent, newName) {
     throw error;
   }
   await target.parent.removeEntry(target.name, {recursive: true});
+  // 트리 순서: 이름 변경은 같은 자리, 이동은 옮겨 간 곳의 맨 뒤
+  if (samePlace) {
+    await renameInFolderOrder(target.parent, orderBefore, target.name, newName);
+  } else {
+    await removeFromFolderOrder(target.parent, target.name);
+    await appendToFolderOrder(destParent, newName);
+  }
   // 옮긴 폴더(또는 그 아래)의 화면을 보고 있었다면 현황으로 (경로가 바뀌었으므로)
   if (app.screen && isPathUnder(app.screen.path, target.path)) {
     app.screen = null;
@@ -424,6 +418,7 @@ async function deleteMenuFolder(target) {
   try {
     await withBusy(`${kindName}를 지우는 중…`, async () => {
       await target.parent.removeEntry(target.name, {recursive: true});
+      await removeFromFolderOrder(target.parent, target.name);
       // 지운 폴더(또는 그 아래)의 화면을 보고 있었다면 현황으로 (등록 안 된 변경도 함께 지워진 것이므로 묻지 않음)
       if (app.screen && isPathUnder(app.screen.path, target.path)) {
         app.screen = null;
@@ -527,6 +522,7 @@ async function copyMenuFolder(target, destParent, newName, keepWorkLog) {
     await destParent.removeEntry(newName, {recursive: true});
     throw error;
   }
+  await appendToFolderOrder(destParent, newName);   // 복사본은 맨 뒤 (안의 순서는 순서 파일이 함께 복사되어 그대로)
 }
 
 /** 메뉴 복사 창의 [복사] — 열어 둔 화면은 그대로 두므로 이동 확인을 받지 않습니다 */

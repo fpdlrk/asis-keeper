@@ -44,6 +44,7 @@ function showEditorMissing() {
   initGrids();
   initDiff();
   initSourceDiff();
+  initGlobalSearch();
   initReport();
   initFonts();
   settings.get(SETTING_KEYS.ignoreFormat).then(ignore => {

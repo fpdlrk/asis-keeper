@@ -55,7 +55,7 @@ function entityItemHtml(record) {
     <div class="blk-h"><span class="bt-wrap"><input type="text" class="bt def-title" value="${escapeHtml(data.title)}"
       aria-label="ENTITY 이름" placeholder="이름 입력" ${TITLE_VIEW_ATTRS}></span><span class="sp"></span>
       <button type="button" class="btn btn-s" data-entity-usage="${id}">사용하는 서비스</button></div>
-    <div class="ent-phase">${entityPhaseHtml(record)}${unlockEntriesHtml(record.unlockLog)}</div>
+    <div class="ent-phase">${entityPhaseHtml(record)}</div>
     <div class="ent-usage" data-usage-for="${id}"></div>
     ${defItemBodyHtml('entity', data, {idBase: record.id})}
     ${itemLogHtml('entity', 'entity', record)}
@@ -91,7 +91,7 @@ async function verifyEntityHashes() {
     const badge = $(`[data-entity-hash="${record.id}"]`);
     if (!badge || !record.hash) continue;
     const changed = await isEntityOriginalChanged(record);
-    badge.innerHTML = changed ? `<span class="tag bad">${ICON.warn}원본 변경 감지</span>` : `<span class="tag ok">${ICON.check}원본 일치</span>`;
+    badge.innerHTML = changed ? `<span class="tag bad">${ICON.warn}원본 변경 감지</span>` : `<span class="tag ok">${ICON.check}원본 변경 없음</span>`;
   }
 }
 
@@ -290,7 +290,7 @@ async function saveEntityTab() {
     const record = findEntity(id);
     const previous = savedById.get(id);
     const previousLayer = previous && previous[layer];
-    appendSystemLog(record, previousLayer ? defChangeLogText('entity', previousLayer, data) : creationLogText(record, layer));
+    appendSystemLog(record, previousLayer ? defChangeLogText('entity', previousLayer, data) : creationLogText(record, layer, true));
     record[layer] = data;
   }
   screen.entities = inputs.map(({id}) => findEntity(id));

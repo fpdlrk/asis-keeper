@@ -364,29 +364,12 @@ function gridHtml(tableId, columnsKey, grid, title, readOnly = false) {
     + `<div class="gone-rows" data-gone-rows="${tableId}"></div></div>`;
 }
 
-/**
- * 화면 이력 목록 (최근 것이 위) — 상태 변경(meta.statusLog)과 화면의 일(meta.activityLog: 항목 삭제 · 잠금 · 잠금 풀기)을 시간순으로
- *   상태: [요청] 2026.10.20 · 홍길동 (바꾼 사람 기록이 없으면 이 화면의 작업자, 그것도 없으면 -)
- *   일  : [시스템] 2026.10.20 · 홍길동 + 다음 줄에 내용
- */
-function screenLogHtml(meta) {
-  const statusRows = (meta.statusLog || []).map(entry => {
-    const name = normalizeStatus(entry.status);
-    return {at: entry.at, html: `<li title="${escapeHtml(formatDateTime(entry.at))}"><b class="st-t s${STATUS_LIST.indexOf(name)}">[${escapeHtml(name)}]</b> `
-      + `${escapeHtml(formatDay(entry.at))} <span class="sep">·</span> ${escapeHtml(entry.by || meta.worker || '-')}</li>`};
-  });
-  const activityRows = (meta.activityLog || []).map(entry => ({at: entry.at, html: `<li class="act" title="${escapeHtml(formatDateTime(entry.at))}">`
-    + `${logSourceTagHtml(entry)} ${escapeHtml(formatDay(entry.at))} <span class="sep">·</span> ${escapeHtml(entry.by || '-')}`
-    + `<div class="act-t">${escapeHtml(entry.text)}</div></li>`}));
-  const rows = [...statusRows, ...activityRows].sort((a, b) => String(b.at).localeCompare(String(a.at)));
-  return rows.length ? rows.map(row => row.html).join('') : '<li class="muted">기록된 이력이 없습니다.</li>';
-}
-
 /** 화면 위쪽: 제목 · 작업 정보 한 줄 · 경고 · 탭 (원본이 잠긴 탭은 이름 옆에 자물쇠) */
 function screenHeaderHtml(meta) {
   const statusIndex = statusIndexOf(meta);
   const statusOptions = STATUS_LIST.map((name, i) => `<option value="${i}"${i === statusIndex ? ' selected' : ''}>${name}</option>`).join('');
-  const lockMark = id => (LAYER_TABS.includes(id) && isTabLockedIn(meta, id) ? `<span class="tab-lk" title="원본 잠김 · 신규 작업 중">${ICON.lock}</span>` : '');
+  // 신규 화면은 잠근 원본이 없으므로 자물쇠를 붙이지 않음
+  const lockMark = id => (LAYER_TABS.includes(id) && isTabLockedIn(meta, id) && !isNewScreen(meta) ?`<span class="tab-lk" title="원본 잠김 · 신규 작업 중">${ICON.lock}</span>` : '');
   const tabs = SCREEN_TABS.map(([id, label]) =>
     `<button type="button" role="tab" class="tab" data-t="${id}" aria-selected="false">${lockMark(id)}<span class="tl">${label}</span><em class="mk" data-m="${id}"></em></button>`).join('');
   return `<div class="scr-head">
@@ -395,9 +378,7 @@ function screenHeaderHtml(meta) {
       <label title="화면을 만들 때 자동으로 붙는 번호입니다 (고칠 수 없음)">티켓<input type="text" id="ticket" class="inl mono" value="${escapeHtml(meta.ticket || '')}" placeholder="-" disabled></label>
       <label>작업자<input type="text" id="worker" class="inl" value="${escapeHtml(meta.worker || '')}" placeholder="-"></label>
       <label title="파일을 올릴 때 저장 경로의 기본값으로 쓰입니다">원본 위치<input type="text" id="origin" class="inl mono" value="${escapeHtml(meta.origin || '')}" placeholder="예: /src/main/webapp/hr/"></label>
-      <label>상태<select id="stSel" class="stpill s${statusIndex}" title="바꾸면 바로 저장되고 이력이 남습니다">${statusOptions}</select></label>
-      <button type="button" class="btn btn-s btn-ghost" id="btnScreenLog" title="상태 변경 · 항목 삭제 · 잠금 기록">이력</button>
-      <span id="integrity"></span>
+      <label>상태<select id="stSel" class="stpill s${statusIndex}" title="바꾸면 바로 저장되고 이력이 남습니다">${statusOptions}</select></label>      <span id="integrity"></span>
     </div>
     <div id="warn"></div>
     <nav class="tabs" role="tablist" aria-label="화면 탭">${tabs}</nav>
@@ -420,8 +401,8 @@ function screenPanelsHtml(meta) {
         <div id="blocks-asis" class="blocks${locked ? ' locked' : ''}">${screen.blocks.asis.map(block => sqlBlockHtml('asis', block, locked)).join('')}</div>
       </div>
       <div class="layer" data-layer="tobe"${locked ? '' : ' hidden'}>
-        <div class="toolbar"><span class="muted">신규 SQL 마다 왼쪽에 원본을 나란히 보여 주고 바뀐 줄을 색칠합니다.</span><span class="sp"></span>
-          ${ignoreFormatToggleHtml()}</div>
+        ${isNewScreen(meta) ? '' : `<div class="toolbar"><span class="muted">신규 SQL 마다 왼쪽에 원본을 나란히 보여 주고 바뀐 줄을 색칠합니다.</span><span class="sp"></span>
+          ${ignoreFormatToggleHtml()}</div>`}<!-- 신규 화면은 비교할 원본이 없어 안내 · 공백·대소문자 무시를 빼고 그림 -->
         ${pillTabsBarHtml('tobe')}
         <div id="blocks-tobe" class="blocks">${screen.blocks.tobe.map(block => sqlBlockHtml('tobe', block, false)).join('')}</div>
         <div id="gone-tobe" class="blocks"></div>
@@ -448,17 +429,6 @@ function screenPanelsHtml(meta) {
 const saveBarHtml = () => `<div class="savebar" id="savebar"><span id="sbText" class="sb-text"></span><span class="sp"></span>
   <button type="button" class="btn btn-s btn-ghost" id="btnDiscard">변경 취소</button>
   <button type="button" class="btn btn-s btn-primary" id="btnSaveAll">등록 <kbd>Ctrl+S</kbd></button></div>`;
-
-/** 화면 이력 창 열기 (상태 옆 [이력]) */
-function openScreenLog() {
-  $('#stlog').innerHTML = screenLogHtml(app.screen.meta);
-  $('#screenLogModal').hidden = false;
-}
-
-/** 화면 이력이 바뀌었을 때 (상태 변경 · 등록) — 창이 열려 있으면 다시 그림 */
-function refreshScreenLog() {
-  if (app.screen && !$('#screenLogModal').hidden) $('#stlog').innerHTML = screenLogHtml(app.screen.meta);
-}
 
 /* ======================= 화면 요약 줄 =======================
    스크롤로 위쪽 머리(화면 탭 줄)가 사라지면 맨 위에 한 줄짜리 요약 줄이 내려옵니다.

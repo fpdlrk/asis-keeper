@@ -133,7 +133,9 @@ function screenReportHtml(data, index) {
   const unlockCount = LAYER_TABS.reduce((sum, tab) => sum + locks[tab].unlockLog.length, 0);
   const lockedLabels = LAYER_TABS.filter(tab => locks[tab].locked).map(layerTabLabel);
   const reopened = reopenedTabs(meta).map(layerTabLabel);
-  const integrityState = !lockedLabels.length
+  const integrityState = isNewScreen(meta)
+    ? '<span class="note">신규 화면 (원본 없음)</span>'
+    : !lockedLabels.length
     ? '<span class="note">원본 미등록</span>'
     : data.changedFiles.length
       ? '<span class="bad">변경 감지: ' + escapeHtml(data.changedFiles.join(', ')) + '</span>'

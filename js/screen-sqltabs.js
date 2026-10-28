@@ -348,7 +348,7 @@ function askNewSqlBlock(kind) {
     editor.setValue('', -1);
     editor.session.getUndoManager().reset();
     error.hidden = true;
-    $('#saPairRow').hidden = kind !== 'tobe';
+    $('#saPairRow').hidden = kind !== 'tobe' || isNewScreen(app.screen.meta);   // 신규 화면은 고를 원본이 없음 (값은 '없음' 그대로)
     if (kind === 'tobe') $('#saPair').innerHTML = pairChoicesHtml();
 
     const finish = result => {
@@ -409,28 +409,45 @@ async function addSqlBlock(kind) {
 /** 등록할 때 항목 정보에 함께 적을 이력 (없으면 아무것도 적지 않음) */
 const blockLogOf = item => (item.log && item.log.length ? {log: item.log} : {});
 
-/** 이력 한 줄의 [시스템] / [사용자] 꼬리표 */
+/** 이력 한 줄의 [시스템] / [사용자] / [화면] 꼬리표 */
 const logSourceTagHtml = entry => `<span class="wl-src ${logSourceOf(entry)}">${LOG_SOURCE_LABELS[logSourceOf(entry)]}</span>`;
 
+/* 이력 거르기 단추 — ENTITY 는 여러 화면이 함께 쓰므로 이 화면의 [화면] 이력을 섞지 않음 */
+const LOG_FILTERS = ['all', 'user', 'system', 'screen'];
+const SHARED_LOG_FILTERS = ['all', 'user', 'system'];
+const hasScreenLog = scope => scope !== 'entity';
+
 /**
- * 이력 목록 (최근 것이 위) — 한 항목은 한 줄: [시스템] 신규 생성 [2026.10.27] (날짜는 내용 바로 뒤)
+ * 이력 목록 (최근 것이 위) — 한 항목은 한 줄: [시스템] 신규 생성 2026.10.27 (날짜는 내용 바로 뒤, 연한 색)
+ * 그 항목의 이력 + 화면 전체의 이력([화면], screenLogEntries)을 시간순으로 섞어 보여 줍니다.
  * 쓴 사람과 정확한 시각은 줄에 마우스를 올리면 보입니다.
+ * @param {'sql'|'def'|'entity'} scope
  */
-function logItemsHtml(item) {
-  const entries = (item.log || []).slice().reverse();
+function logItemsHtml(scope, item) {
+  const screenEntries = hasScreenLog(scope) && app.screen ? screenLogEntries(app.screen.meta) : [];
+  const entries = [...(item.log || []), ...screenEntries].sort((a, b) => String(b.at).localeCompare(String(a.at)));
   if (!entries.length) return '<li class="muted">아직 남긴 이력이 없습니다.</li>';
   return entries.map(entry => `<li class="src-${logSourceOf(entry)}" title="${escapeHtml(`${formatDateTime(entry.at)} · ${entry.by || '-'}`)}">`
     + logSourceTagHtml(entry)
-    + `<span class="wl-t">${escapeHtml(entry.text)} <span class="wl-d">[${escapeHtml(formatDay(entry.at))}]</span></span></li>`).join('');
+    + `<span class="wl-t">${escapeHtml(entry.text)} <span class="wl-d">${escapeHtml(formatDay(entry.at))}</span></span></li>`).join('');
 }
 
 /** 화면에 있는 그 항목의 이력 목록을 다시 그림 (이력을 남긴 뒤 · 등록 뒤) */
 function renderItemLog(scope, kind, item) {
   const list = $(`[data-log-list="${logListKey(scope, kind, item.id)}"]`);
-  if (list) list.innerHTML = logItemsHtml(item);
+  if (list) list.innerHTML = logItemsHtml(scope, item);
 }
 
-/** [전체 · 사용자 · 시스템]: 목록에서 그 출처만 보이게 (보이기만 바꿈 — CSS .wlog-list[data-filter]) */
+/** 화면의 모든 항목 이력 목록을 다시 그림 — 화면 이력([화면])은 모든 목록에 섞여 있어 등록 · 상태 변경 때 함께 바뀜 */
+function renderAllItemLogs() {
+  const screen = app.screen;
+  if (!screen) return;
+  for (const kind of ['asis', 'tobe']) screen.blocks[kind].forEach(block => renderItemLog('sql', kind, block));
+  for (const tab of Object.keys(DEF_TABS)) (screen.defItems[tab] || []).forEach(item => renderItemLog('def', tab, item));
+  (screen.entities || []).forEach(record => renderItemLog('entity', 'entity', record));
+}
+
+/** [전체 · 사용자 · 시스템 · 화면]: 목록에서 그 출처만 보이게 (보이기만 바꿈 — CSS .wlog-list[data-filter]) */
 function filterItemLog(button) {
   const box = button.closest('.blk-log');
   box.querySelector('.wlog-list').dataset.filter = button.dataset.logFilter;
@@ -446,10 +463,10 @@ const logListKey = (scope, kind, itemId) => `${scope}-${kind}-${itemId}`;
  * @param {string} kind SQL 은 'asis'|'tobe', 정의서는 'service'|'object'|'code'
  */
 const itemLogHtml = (scope, kind, item) => `<div class="blk-log">
-    <div class="blk-sub wlog-h">이력 <span class="muted">최근 것이 위 · 시스템 = 등록할 때 자동 기록</span><span class="sp"></span>
-      <span class="wlog-filter" role="group" aria-label="이력 거르기">${['all', 'user', 'system'].map(value =>
+    <div class="blk-sub wlog-h">${ICON.clock}이력 <span class="muted">최근 것이 위 · 시스템 = 등록할 때 자동 기록${hasScreenLog(scope) ? ' · 화면 = 상태 변경 · 삭제 · 잠금' : ''}</span><span class="sp"></span>
+      <span class="wlog-filter" role="group" aria-label="이력 거르기">${(hasScreenLog(scope) ? LOG_FILTERS : SHARED_LOG_FILTERS).map(value =>
         `<button type="button" class="${value === 'all' ? 'on' : ''}" data-log-filter="${value}">${value === 'all' ? '전체' : LOG_SOURCE_LABELS[value]}</button>`).join('')}</span></div>
-    <ul class="wlog-list" data-log-list="${logListKey(scope, kind, item.id)}" aria-label="이력">${logItemsHtml(item)}</ul>
+    <ul class="wlog-list" data-log-list="${logListKey(scope, kind, item.id)}" aria-label="이력">${logItemsHtml(scope, item)}</ul>
     <div class="wlog-in"><textarea data-log-input="${item.id}" data-log-scope="${scope}" data-kind="${kind}" rows="2" aria-label="이력 입력"
       placeholder="예: 조회 조건에 사용 여부 추가 (Ctrl+Enter 로 저장)"></textarea>
       <button type="button" class="btn btn-s btn-primary" data-log-save="${item.id}" data-log-scope="${scope}" data-kind="${kind}">이력 저장</button></div>

@@ -33,8 +33,11 @@
     <span class="vsep" aria-hidden="true"></span>
     <nav class="crumb" id="crumb" aria-label="현재 위치"></nav>
     <span class="sp"></span>
+    <button type="button" id="btnGlobalSearch" class="btn btn-s btn-ghost gs-btn" title="모든 화면의 내용에서 찾기 (Ctrl+Shift+F)">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      검색<kbd>Ctrl+Shift+F</kbd>
+    </button>
     <button type="button" id="btnSourceDiff" class="btn btn-s btn-ghost" title="두 소스를 붙여넣어 줄 단위로 비교합니다">소스 비교</button>
-    <button type="button" id="btnFont" class="btn btn-s btn-ghost" title="글꼴 설정">글꼴</button>
     <button type="button" id="btnReport" class="btn btn-s btn-primary" disabled>보고서 만들기</button>
   </header>
 
@@ -45,17 +48,28 @@
     </select>
     <label class="search">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-      <input type="search" id="q" placeholder="화면명 · 티켓 · 작업자 · SQL" aria-label="화면 검색 (화면명, 티켓, 작업자, 메모·SQL 내용)">
+      <input type="search" id="q" placeholder="파일 · 폴더 이름" aria-label="트리 검색 (파일 · 폴더 이름 — 내용 검색은 상단 [검색] · Ctrl+Shift+F)" title="이름으로 찾습니다. 티켓 · SQL 등 내용은 상단 [검색](Ctrl+Shift+F)">
     </label>
     </div>
     <ul class="tree" id="tree" role="tree" aria-label="화면 트리" title="우클릭: 메뉴 추가 · 이름 변경 · 이동"></ul>
-    <div class="side-foot">
-      <div class="pf"><span>운영 반영</span><b id="gtxt">0 / 0 · 0%</b></div>
-      <div id="gauge" class="gauge" role="progressbar" aria-label="운영 반영률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="gfill"></i></div>
-    </div>
   </aside>
 
   <main id="main"></main>
+
+  <!-- 하단 줄: 왼쪽 운영 반영률(js/tree.js), 오른쪽 글꼴 설정 단추(js/fonts.js — 단추 글자 = 지금 화면 글꼴 이름) -->
+  <footer class="foot">
+    <div class="pf">
+      <span>운영 반영</span>
+      <div id="gauge" class="gauge" role="progressbar" aria-label="운영 반영률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="gfill"></i></div>
+      <b id="gtxt">0 / 0 · 0%</b>
+    </div>
+    <span class="sp"></span>
+    <button type="button" id="btnFont" class="btn btn-s btn-ghost" title="글꼴 설정">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3.5h10M8 3.5v9.5M6 13h4"/></svg>
+      <span id="fontName">글꼴</span>
+      <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+    </button>
+  </footer>
 </div>
 
 <div id="toast" role="status" aria-live="polite"></div>
@@ -71,6 +85,7 @@
   <input type="text" id="dlgInput" class="inp" autocomplete="off">
   <p class="err" id="dlgErr" hidden role="alert"></p>
   <p class="hint" id="dlgHint"></p>
+  <div id="dlgChoiceRow" class="dlg-choice" hidden><span class="f" id="dlgChoiceLabel"></span><div class="radio-row" id="dlgChoices" role="radiogroup"></div><p class="err" id="dlgChoiceErr" hidden role="alert"></p></div>
   <label class="chk" id="dlgCheckRow" hidden><input type="checkbox" id="dlgCheck"><span id="dlgCheckText"></span></label>
   <div class="mbar"><button type="button" class="btn btn-s" id="dlgCancel">취소</button><button type="button" class="btn btn-s btn-primary" id="dlgOk">확인</button></div>
 </div></div>
@@ -110,12 +125,16 @@
   <div class="mbar"><button type="button" class="btn btn-s" id="dfClose">닫기</button></div>
 </div></div>
 
-<!-- 화면 이력 창 (화면 위 상태 옆 [이력]): 상태 변경 · 항목 삭제 · 잠금 기록 (js/screen.js openScreenLog) -->
-<div id="screenLogModal" class="overlay" hidden><div class="mbox mid" role="dialog" aria-labelledby="slTitle">
-  <h3 id="slTitle">화면 이력</h3>
-  <p class="hint">상태 변경과 항목 삭제 · 원본 잠금 · 잠금 풀기가 자동으로 기록됩니다. 항목마다의 이력은 각 항목 아래에 있습니다.</p>
-  <ul class="stlog sl-list" id="stlog"></ul>
-  <div class="mbar"><button type="button" class="btn btn-s" id="slClose">닫기</button></div>
+<!-- 전체 검색 창 (상단 [검색] · Ctrl+Shift+F): 모든 화면 · ENTITY 의 내용에서 찾기 (js/global-search.js) -->
+<div id="gsModal" class="overlay" hidden><div class="mbox mid gsbox" role="dialog" aria-labelledby="gsTitle">
+  <h3 id="gsTitle">전체 검색</h3>
+  <label class="gs-search">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+    <input type="search" id="gsInput" autocomplete="off" placeholder="화면 이름 · 티켓 · 작업자 · SQL · 정의서 · ENTITY · 이력" aria-label="전체 검색어">
+  </label>
+  <p class="hint" id="gsStatus" aria-live="polite"></p>
+  <div class="gs-result" id="gsResult"></div>
+  <div class="mbar"><span class="hint mbar-hint">결과를 누르면 그 화면의 탭 · 항목으로 이동합니다 · Esc 닫기</span><button type="button" class="btn btn-s" id="gsClose">닫기</button></div>
 </div></div>
 
 <!-- 소스 비교 창 (상단 [소스 비교]): 아무 두 소스를 넣어 비교 (js/source-diff.js) -->
@@ -193,6 +212,7 @@
 <script src="js/screen-grid.js"></script>
 <script src="js/screen-files.js"></script>
 <script src="js/screen-save.js"></script>
+<script src="js/global-search.js"></script>
 <script src="js/report.js"></script>
 <script src="js/fonts.js"></script>
 <script src="js/project.js"></script>

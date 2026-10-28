@@ -3,12 +3,15 @@
 다른 환경에서 Claude(또는 다른 사람)가 이어서 작업할 때 읽는 문서입니다.
 프로젝트 자체의 구조·규칙은 **`README.md`가 원본**입니다. 이 문서는 **"지금까지 무엇을 왜 바꿨고, 무엇이 남았는지"** 만 다룹니다.
 
-- 작성 시점: 2026-10-26 (1차) · 2026-10-27 갱신 (2차) · **2026-10-27 갱신 (3차 — 원본/신규 구조 전환)**
+- 작성 시점: 2026-10-26 (1차) · 2026-10-27 갱신 (2차) · 2026-10-27~28 갱신 (3차 — 원본/신규 구조 전환 ~ ENTITY) · **2026-10-28 문서 정리**
 - 1차 작업(아래 1장): `82ccc06`, `0e041fa`로 커밋됨
-- 2차 작업(아래 2장): 사용자가 커밋함(`cc883c2`까지)
-- 3차 작업(아래 2-1장 ㉓): **아직 커밋하지 않은 워킹트리 상태** — 커밋은 사용자가 직접 합니다(Claude 는 커밋하지 않음)
+- 2차 작업(아래 2장): `6e125c3` ~ `cc883c2`로 커밋됨
+- 3차 작업(아래 2-1장 ㉓~㉟): `82edc18` ~ `1a9af5b`로 커밋됨. 지금 커밋하지 않은 변경은 없음
+- 커밋은 사용자가 직접 합니다(Claude 는 커밋하지 않음)
 - ⚠ 3차에서 화면 구조가 크게 바뀌었습니다. 2장의 ⑪(기존 SQL 탭 · 신규 SQL 탭), ⑮(`items.json`), ⑳(잠긴 기존 SQL 칸 잠금 전환) 설명은 **㉓가 우선**합니다.
 - ⚠ ㉓의 '화면 하나에 잠금 하나'는 **㉕(탭 단위 잠금)로 바뀌었습니다.** 잠금 관련은 ㉕가 우선합니다.
+- ⚠ '비교' 탭은 **㉘(상단 [소스 비교] 창)으로 없어졌고**, 오른쪽 영역(상태 이력 · 메모)은 **㉟로 없어졌습니다.** 그 전 장에서 비교 탭 · 오른쪽 영역을 말하는 부분은 지금과 다릅니다.
+- 2-1장은 ㉓을 빼면 **최근 것이 위**(㊷ → … → ㊱ → ㉓ → ㉟ → … → ㉔ 순)입니다.
 - 실행: `index.html`을 **Chrome 또는 Edge로** 엽니다(더블클릭). 서버·빌드·설치 없음
 
 ---
@@ -161,7 +164,7 @@ grep -rn "지운이름" js/ index.html
 
 ---
 
-## 2. 2차 작업 (2026-10-27, 아직 커밋 안 함)
+## 2. 2차 작업 (2026-10-27, 커밋됨)
 
 ### ⑧ 마우스를 올리면 나타나는 복사 아이콘 + ⋯ 메뉴의 '복사' 제거
 
@@ -390,7 +393,80 @@ grep -rn "지운이름" js/ index.html
 
 ---
 
-## 2-1. 3차 작업 (2026-10-27, 아직 커밋 안 함)
+## 2-1. 3차 작업 (2026-10-27 ~ 28, ㊱ ~ ㊷ 말고는 커밋됨)
+
+### ㊷ 트리를 만든 순서대로 (2026-10-28, 아직 커밋 안 함)
+
+**배경(사용자 요청)**: TEST 다음에 PARK 를 만들었는데 이름순 정렬이라 PARK 가 위로 감 → 만든 순서대로
+- 브라우저 폴더 기능은 만든 시각을 안 주므로 폴더마다 순서 파일 `FOLDER_ORDER_FILE`(`.order.json` = 이름 배열)을 둠
+- `screen-data.js`: `listChildFolders`가 `sortByFolderOrder`로 정렬(파일에 없는 이름은 뒤에 이름순) · `readFolderOrder` `writeFolderOrder` `appendToFolderOrder` `removeFromFolderOrder` `renameInFolderOrder`
+- `tree.js`: 폴더 추가 · 파일 추가 · 복사(`copyMenuFolder`) → 맨 뒤 / 이름 변경(`relocateFolder`, `isSameEntry`로 같은 곳인지) → 같은 자리 / 이동 → 옮겨 간 곳 맨 뒤 / 삭제 → 뺌. 폴더째 복사 · 이동하면 안의 `.order.json`도 같이 옮겨져 안쪽 순서 유지
+- 예전 폴더(순서 파일 없음)는 이름순 그대로, 그 안에 처음 무언가를 만들 때 지금 순서로 파일이 생김
+- `listChildFolders`를 쓰는 화면 찾기(`findAllScreens`) · 보고서 · 현황 순서도 트리 순서를 따름
+- 확인: node 로 임시 폴더에서 추가 · 이름 변경 · 삭제 · 앱 밖에서 만든 폴더 순서 확인. 확인 필요(브라우저): 추가 · 이름 변경 · 이동 · 복사 · 삭제 뒤 트리 순서
+
+### ㊶ 파일 추가 — 화면 종류를 꼭 고르게 (2026-10-28, 아직 커밋 안 함)
+
+**배경(사용자 요청)**: 기본이 '기존 화면 변경'이라 무심코 기존으로 만들 수 있음 → 처음엔 아무것도 안 고른 상태, 안 고르면 안내하고 추가 안 함
+- `askText`의 `choices.required` · `value` 없음 = 안 고름. 안 고르고 확인하면 `showChoiceError` — 알림(toast, `requiredMessage`) + 고르는 칸을 붉게(`.dlg-choice.need`) + 아래 안내(`#dlgChoiceErr`) + 첫 선택지로 커서. 고르면 바로 지움
+- 브라우저 alert 은 쓰지 않음(코드 규칙 5) — 창 안의 안내로 대신함
+
+### ㊵ 검색 둘로 — 트리는 이름만, 내용은 상단 [검색] 창 (2026-10-28, 아직 커밋 안 함)
+
+**배경(사용자 요청)**: 트리 검색이 SQL 내용까지 찾아 이름이 안 맞는 화면이 나와 헷갈림
+- 트리(`tree.js`): `matchesSearch`(내용까지) **삭제** → `matchesTreeName`(파일 · 폴더 이름만). 폴더 이름이 맞으면 그 아래 모두 보임(`buildTreeBranch`의 `showAll`). 상태 필터는 그대로
+- 새 파일 `global-search.js`(`index.html`에서 `screen-save.js` 다음): 상단 **[검색]**(`#btnGlobalSearch`) · **Ctrl+Shift+F**(캡처 단계 — SQL 편집기 안에서도) → `#gsModal`
+  - 범위: 화면 이름 · 티켓 · 작업자 · 원본 위치 / SQL 제목 · 본문(몇 행) · 롤백 · 정의 · 파라미터 / 정의서 이름 · 정의 칸 · 표 / 변경 요약 / **사용자** 이력 글(시스템 기록 제외) / ENTITY(원본 · 신규 · 이력, 따로 묶음). 원본 · 신규 둘 다
+  - 결과: 화면별 묶음(경로 · 상태) + '어디서' + 앞뒤 글(`<mark>`), 화면당 `MAX_HITS_PER_SCREEN`(20)까지. 찾는 중 진행 표시, 입력 멈추고 `GLOBAL_SEARCH_DELAY` 뒤 / Enter 바로
+  - 누르면 이동(`goToSearchHit`): 화면 열기 → 탭 → 항목. SQL 본문이면 편집기에서 찾은 글자 선택. 신규 단계에서 원본을 찾았으면 짝인 신규 항목으로(SQL 은 왼쪽 원본 칸에서 선택). ENTITY 는 열린 화면(없으면 쓰는 첫 화면)의 ENTITY 탭
+  - 파일을 읽기만 함. 확인: node 로 임시 폴더(SQL · 서비스 · ENTITY · 이력)를 만들어 검색어 4개 결과 확인
+- 확인 필요(브라우저): 단축키 · 창 · 결과 눌러 이동(SQL 글자 선택, 서비스 항목, ENTITY) · 화면이 많을 때 속도 · 트리 이름 검색 · 폴더 이름 검색
+
+### ㊴ 탭 위 '잠금 해제 이력' 띠 없앰 (2026-10-28, 아직 커밋 안 함)
+
+**배경(사용자 요청)**: 잠그기 · 잠금 풀기 기록이 하단 이력([화면] — ENTITY 는 그 ENTITY 이력)에도 나오므로 위에 이중으로 둘 필요 없음
+- **삭제**: `unlockLogBannerHtml` `unlockEntriesHtml`(screen-lock.js) — `tabPhaseHtml`은 단계 안내만, ENTITY(`entityItemHtml`)도 단계 안내만 · CSS `.unlocklog`
+- 예전 데이터: ㉝ 이전에 푼 잠금은 activityLog 에 없음 → `legacyUnlockEntries`(change-log.js)가 탭 `unlockLog`에서 만들어 `screenLogEntries`에 넣음.
+  activityLog 에 같은 글('<탭> 잠금 풀기 (사유: …)')이 있으면 넣지 않아 두 번 안 보임. ENTITY 는 처음부터 자기 이력에 남겨 따로 할 것 없음
+- 그대로: `unlockLog` 저장 · 잠금이 풀린 동안의 안내 띠('잠금이 풀려 있습니다') · 현황 '잠금 해제 중' · 보고서 횟수 · 상단 '잠금 해제 중: 탭' 표시
+- 잠금 풀기 창 안내 문구를 '탭 이력([화면])에 남고'로
+
+### ㊳ 이력 하나로 — 상단 [이력] 창 없앰, 화면 이력은 항목 이력의 [화면] (2026-10-28, 아직 커밋 안 함)
+
+**배경(사용자 요청)**: 이력이 상단 [이력] 창과 본문 하단 두 곳이라 같은 역할이 둘. 하단 이력에 화면 이력도 섞어 보이고 [화면]으로 거르게.
+㉟에서 만든 화면 이력 창을 되돌린 것 (기록 저장은 그대로 — 보여 주는 곳만 바뀜)
+- `change-log.js`: `LOG_SOURCE_LABELS.screen` ('화면'), `logSourceOf`가 'screen' 도 앎, `screenLogEntries(meta)`(상태 변경 + activityLog → source 'screen', 저장값은 안 바꿈)
+- `screen-sqltabs.js`: `logItemsHtml(scope, item)`(인자 추가) — 항목 이력 + 화면 이력을 시간순으로. 거르기 `LOG_FILTERS`(+화면) / ENTITY 는 `SHARED_LOG_FILTERS`(`hasScreenLog`).
+  `renderAllItemLogs` — 등록(`saveSection`) · 상태 변경(`changeStatus`) 뒤 모든 목록을 다시 그림. 이력 제목 앞 시계 아이콘(`ICON.clock`)
+- **삭제**: `screenLogHtml` `openScreenLog` `refreshScreenLog`(screen.js) · `#btnScreenLog` · `#screenLogModal` · `#slClose` · CSS `.stlog` `.sl-list`
+- CSS: `.wl-src.screen`(색 토큰 `--log-screen*`), 거르기 규칙을 `li:not(.src-…)`로, [이력 저장] 단추 높이 = 입력칸(`.wlog-in` stretch)
+- 문구: 신규 화면의 항목을 처음 등록하면 '신규 생성' 대신 `NEW_SCREEN_LOG_TEXT`('신규 화면으로 만듦 (원본 없음)') — `creationLogText(item, layer, shared)`, ENTITY 는 shared=true 라 그대로.
+  이미 저장된 '신규 생성' 이력은 그대로
+- 확인 필요(브라우저): [전체]에 [화면] 줄이 섞이는지 · [화면] 거르기 · 상태 바꾸면 바로 보이는지 · 항목 삭제 후 다른 항목 이력에 삭제 기록 · ENTITY 탭엔 [화면] 없음 · 시계 아이콘 · 단추 높이
+
+### ㊲ 신규 화면 — 파일 추가 때 '기존 화면 변경 / 신규 화면' 고르기 (2026-10-28, 아직 커밋 안 함)
+
+**배경(사용자 요청)**: 처음부터 신규인 화면이 있는데, 지금은 원본을 넣고 잠가야만 신규 작업을 할 수 있음(원본이 없으면 잠그기도 막힘).
+→ 트리에서 파일을 만들 때 종류를 고르고, 신규 화면은 모든 탭이 처음부터 신규.
+- 저장: `meta.screenKind = 'new'` (없으면 기존 화면). 만들 때 화면 이력에 '신규 화면으로 만듦 (원본 없음)'
+- 방식: `tabLocksOf`가 신규 화면이면 언제나 `newScreenTabLocks`(모든 탭 locked · `lockedIds` [] · `hashes` {})를 돌려줌 → 신규 단계 화면 · N 표시 · 변경 표시 · 보고서가 지금 코드 그대로 동작.
+  메뉴 복사(`resetCopiedWorkLog`)가 `tabLocks`를 지워도 신규 화면은 그대로
+- 바꾼 곳: `constants.js`(`SCREEN_KIND_NEW` `SCREEN_KIND_CHOICES`) · `screen-data.js`(`isNewScreen` `newScreenTabLocks`) ·
+  `dialog.js`(`askText`의 `choices` → 결과 `choice`, `fillDialogChoices`, `#dlgChoiceRow`) · `tree.js`(`addSubMenu`) ·
+  `screen-lock.js`(안내 띠 '신규 화면 · 원본 없음', 잠금 풀기 막음, 원본 확인 칸 '신규 화면') · `screen.js`(탭 자물쇠 안 붙임, SQL 탭의 "왼쪽에 원본을 나란히…" 안내 · 공백·대소문자 무시 줄 뺌) ·
+  `screen-sqltabs.js`(SQL 추가 창의 '비교할 원본' 숨김) · `report.js`(원본 무결성 '신규 화면 (원본 없음)')
+- 아직 없는 것: 이미 만든 화면의 종류 바꾸기, 트리에서 신규 화면 표시
+- 확인 완료(2026-10-28 사용자): 신규 화면 만들기 → SQL 등록, 상태 옆 [이력] 창에 '신규 화면으로 만듦 (원본 없음)'
+  (본문 아래 항목 이력에는 그 항목의 '신규 생성'만 나옴 — 화면 이력과 다른 곳)
+- 확인 필요(브라우저): 서비스 · 오브젝트 · 공통코드관리 탭의 안내 띠 · [+ 추가] 항목의 N · 다시 열기, 보고서, 현황 '점검 필요'에 원본 미등록이 안 뜨는지
+
+### ㊱ 하단 줄 — 운영 반영률 · 글꼴 단추 (2026-10-28, 아직 커밋 안 함)
+
+**배경(사용자 요청)**: 왼쪽 영역 아래의 운영 반영 게이지를 전체 화면 맨 아래로 옮기고, 상단의 [글꼴]도 그 줄 오른쪽으로. 단추 글자는 지금 고른 글꼴 이름.
+- `index.html`: `.side-foot` 삭제 → `#app` 맨 아래 `<footer class="foot">`(전체 폭). 왼쪽 `.pf` = '운영 반영' · 게이지 · 수치를 가로 한 줄로, 오른쪽 `#btnFont`(상단에서 옮김). id(`gauge` `gfill` `gtxt` `btnFont`)는 그대로라 `tree.js`는 안 고침
+- `css/app.css`: `#app` 행에 하단 줄(`auto`) 추가(좁은 화면도), `.foot` 추가, `.pf` · `.gauge`(폭 160px, 좁으면 96px) 가로 배치로
+- `fonts.js`: `renderFontButton`(새 전역, + `DEFAULT_UI_FONT_NAME`) — `applyFonts`에서 불러 단추의 `#fontName` 글자를 화면 글꼴 이름으로(기본이면 'Segoe UI + 맑은 고딕'). 단추 = 글자 아이콘 · 글꼴 이름 · 아래 화살표, 마우스를 올리면 화면 · SQL 편집기 글꼴. 누르면 예전과 같은 글꼴 설정 창
+- 확인 필요(브라우저): 하단 줄 위치 · 저장 바와 겹치지 않는지, 글꼴 바꾸면 단추 글자가 바로 바뀌는지, 새로고침 뒤에도 그 이름인지
 
 ### ㉓ 원본/신규 구조 전환 — 모든 탭의 모든 칸에 원본
 
@@ -441,7 +517,7 @@ grep -rn "지운이름" js/ index.html
 **배경(사용자 요청 · 상의)**: 이력은 본문 항목마다 있고, 메모도 이력과 비슷해 보여 오른쪽 영역을 없애고 싶음.
 다만 화면 이력(상태 변경 · 항목 삭제 · 잠금)과 메모(보고서의 '변경 내용 요약')는 항목 이력으로 대신할 수 없어 **옮기기로** 결정.
 - `#rside` · `sidePanelHtml` · `#app.has-screen`(3단 그리드) · `.rside/.rs-*` CSS 삭제 → 본문이 넓어짐
-- 화면 이력: 상태 선택 옆 **[이력]**(`#btnScreenLog`) → `#screenLogModal` 창(`openScreenLog` · 등록/상태 변경 때 `refreshScreenLog`). 내용은 그대로 `screenLogHtml`
+- 화면 이력: 상태 선택 옆 **[이력]**(`#btnScreenLog`) → `#screenLogModal` 창(`openScreenLog` · 등록/상태 변경 때 `refreshScreenLog`). 내용은 그대로 `screenLogHtml` — **㊳에서 없앰**(항목 이력의 [화면]으로)
 - 메모: '첨부' 탭 → **'요약·첨부'** 탭 맨 위 '변경 요약'(편집기 id 는 그대로 `memo`, 등록 영역도 그대로 `common` — 저장 바 이름 '작업 정보 · 변경 요약').
   탭의 ● · ✓ 는 첨부와 변경 요약을 함께 봄(`refreshIndicators`)
 
@@ -649,7 +725,31 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
 | `diff.js` | `STATE_TAG_CLASS` `compareItemRowHtml` `defDiffDetail` `sqlDefinitionDiffDetail` `defCompareHtml` |
 | `report.js` | `reportInfoTableHtml` `reportGridTableHtml` `sqlDefinitionReportHtml` |
 
-새 클릭 속성(`handleScreenClick`): `data-revive-sql` `data-revive-def`(+`data-bid`) `data-revive-row`(+`data-rid`) `data-goto-tab`(+`data-bid`). `#saveAsis` → `lockOriginal`.
+새 클릭 속성(`handleScreenClick`): `data-revive-sql` `data-revive-def`(+`data-bid`) `data-revive-row`(+`data-rid`) `data-goto-tab`(+`data-bid`). `#saveAsis` → `lockOriginal`(㉕에서 탭 위 단추 → `lockTab`으로 바뀜).
+
+### 3차 (㉗ ~ ㉟)
+
+| 파일 | 새 전역 |
+|---|---|
+| `screen-blocks.js` (㉗) | `showPairMenu`(⋯ 메뉴 '비교할 원본 바꾸기') · `setTobePair` 인자가 `(blockId, asisId)`로 바뀜 · **삭제**: `PAIR_SELECT_AUTO` `fillPairSelect` `importAsisSql` |
+| `diff.js` · `layer-diff.js` · `screen.js` (㉘) | **삭제**(비교 탭과 함께): `STATE_TAG_CLASS` `compareRenderSeq` `compareItemRowHtml` `defDiffDetail` `sqlDefinitionDiffDetail` `defCompareHtml` `renderCompareTab` `gridDiffSummary` `goToItem` |
+| `screen-sqltabs.js` (㉙ ㉞ ㉝) | `NEW_BADGE_TEXT` · `markPillTabWarning` · `logSourceTagHtml` `filterItemLog` `renderItemLog` |
+| `screen-grid.js` (㉛) | `removeEmptyGridRows` |
+| `screen-save.js` | `saveSectionData` · `savedSqlStatesOf` `logSqlBlockChange`(㉝) |
+| `change-log.js` (신규, ㉝) | `LOG_SOURCE_LABELS` `MAX_LOG_DETAILS` `MAX_LOG_VALUE_LENGTH` `logSourceOf` `userLogOf` `systemLogEntry` `appendSystemLog` `addActivityLog` `creationLogText` `logValue` `limitDetails` `modifiedLogText` `infoChangeText` `gridChangeText` `defChangeLogText` `sqlChangeLogText` |
+| `constants.js` (㉞) | `ENTITY_DEF` `ENTITY_FILE` `SERVICE_TYPE_SAVE` `defConfigOf` |
+| `entity-data.js` (신규, ㉞) | `entityLayerOf` `entityRecordTitle` `normalizeEntityLayer` `normalizeEntity` `loadEntities` `storedEntityLayer` `storedEntity` `saveEntities` `entityOriginalHash` `isEntityOriginalChanged` `copyEntityLayer` `entityTitleOf` `findEntityUsages` |
+| `screen-entity.js` (신규, ㉞) | `ENTITY_FILTER_LABELS` `emptyEntityLayer` `findEntity` `usedEntityIds` `visibleEntityIds` `entityStateOf` `entityPhaseHtml` `entityItemHtml` `entityPanelInnerHtml` `entityPanelHtml` `readEntityInputs` `entitySignature` `savedEntitySignatures` `isEntityTabChanged` `refreshEntityTabMarks` `renderEntityTabs` `showActiveEntity` `markActiveEntity` `activateEntityTab` `setEntityFilter` `rerenderEntityPanel` `addEntity` `deleteEntity` `saveEntityTab` `saveBeforeEntityLockChange` `lockEntity` `unlockEntity` `verifyEntityHashes` `showEntityUsages` `openServiceItem` |
+| `screen-entity-links.js` (신규, ㉞) | `serviceElementOf` `serviceNeedsEntity` `entityChipsHtml` `entityLinksHtml` `afterEntityLinkChange` `linkEntity` `unlinkEntity` `createAndLinkEntity` `showEntityLinkMenu` `goToEntity` `handleServiceTypeChange` `applyEntityLinkMarks` `blockServicesWithoutEntity` |
+| `screen-defs.js` (㉞) | `readDefItemElement` |
+| `screen-lock.js` (㉞) | `unlockEntriesHtml`(탭 · ENTITY 가 함께 쓰는 잠금 해제 이력 목록) |
+| `report.js` (㉞) | `entitySectionHtml` |
+| `screen.js` (㉝ ㉟) | `screenLogHtml` `openScreenLog` `refreshScreenLog` · **삭제**: `statusLogHtml`(→ `screenLogHtml`) `sidePanelHtml` · (㊳에서 셋 다 삭제) |
+
+`app.entityCache`(보고서용 ENTITY 목록)가 `state.js`에 추가됐습니다.
+새 클릭 속성: `data-entity-id` `data-entity-filter` `data-entity-lock` `data-entity-unlock` `data-entity-usage` `data-entity-hash` `data-link-entity` · 이력 거르기 `data-log-filter`.
+메뉴를 여는 단추에는 꼭 `data-menu`를 붙입니다(dialog.js 의 바깥 클릭 닫기 예외 — 없으면 열자마자 닫힘).
+스크립트 순서: … `layer-diff.js` → **`entity-data.js`** → **`change-log.js`** → `sql.js` … `screen-lock.js` → **`screen-entity.js`** → **`screen-entity-links.js`** → `screen-grid.js` …
 
 ---
 
@@ -710,6 +810,24 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
    "grids": { "<표 키>": [["칸", …]] }, "rowIds": { "<표 키>": ["r…", "L0", …] }, "log": [ … ] }]
 ```
 
+**3차(㉖ · ㉝ · ㉞)에서 더해진 것**
+
+```jsonc
+// meta.json
+{
+  "ticket": "000012",                                       // ㉖ 화면을 만들 때 자동으로 붙는 일련번호(고칠 수 없음)
+  "activityLog": [{ "at": "ISO", "by": "홍길동", "text": "신규 서비스 ‘사원조회’ 삭제", "source": "system" }],   // ㉝ 화면 이력
+  "sqlBlocks": { "asis": [{ …, "log": [{ "at": "ISO", "by": "…", "text": "…", "source": "user" | "system" }] }] }   // ㉝ 이력마다 source
+}
+// service/asis.json · tobe.json — 서비스 항목
+[{ …, "info": { "serviceType": "조회" | "저장", … }, "entityIds": ["e…"] }]   // ㉞ 저장 서비스가 쓰는 ENTITY
+// 루트 .entity/entities.json (㉞, ENTITY_FILE)
+[{ "id": "e…", "asis": { "title": "…", "info": {…}, "grids": {}, "rowIds": {} } | null, "tobe": { … } | null,
+   "locked": false, "savedAt": "…", "hash": "sha256…", "unlockLog": [ … ], "log": [ … ] }]   // asis null = 원본 없는 새 ENTITY
+// 루트 .ticket-seq.json (㉖, TICKET_SEQ_FILE)
+{ "last": 12 }
+```
+
 **없는 필드를 읽을 때의 규칙** — 예전 데이터를 깨뜨리지 않도록 반드시 유지:
 - `rowIds` · `paramIds` 없음(또는 줄 수와 다름) → 순서대로 `L0, L1 …` (`rowIdsOf`) — 원본과 신규가 같은 순서끼리 짝지어짐
 - `<dir>/asis.json` 없음 → 예전 `items.json`(더 예전 파일)을 원본으로 / `<dir>/tobe.json` 없음 → 잠긴 화면은 원본 복사, 아니면 빈 목록
@@ -717,15 +835,24 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
 - `asisUnlockLog` 없음 → 한 번도 잠금을 풀지 않은 화면
 - `asisId` 없음 → **같은 순서**로 짝 (`findPairedAsisBlock`)
 - `log` 없음 → 이력이 없는 SQL (이력이 비어 있으면 `log`를 아예 적지 않음)
+- 이력의 `source` 없음 → 사용자 이력 (`logSourceOf`)
+- `activityLog` 없음 → 화면 이력은 상태 변경(`statusLog`)만
+- `entityIds` 없음 → 연결한 ENTITY 없음 / `.entity/entities.json` 없음 → ENTITY 없음
+- `ticket` 없음 → 화면을 열 때 새 번호를 붙임
 
 ---
 
 ## 5. 확인이 필요한 것 (브라우저에서 직접)
 
+### 오른쪽 영역 제거 (㉟) — 아직 확인 안 함
+
+- [ ] 오른쪽 영역이 없어져 본문이 넓어졌는지, (화면 이력 창은 ㊳에서 없앰 — ㊳ 확인 항목 참고)
+- [ ] '요약·첨부' 탭 맨 위 '변경 요약'(예전 메모) 저장 · 보고서의 '변경 내용 요약', 탭의 ● · ✓
+
 ### 서비스 유형 · ENTITY (㉞) — 아직 확인 안 함
 
 - [ ] 서비스 추가 창에서 유형을 안 고르면 안내, 저장이면 '사용 ENTITY' 영역, 유형을 조회로 바꾸면 연결 풀지 확인
-- [ ] [+ ENTITY 연결] 고르기 · 새 ENTITY 만들기(서비스 화면에 머묾), 이름표 → ENTITY 탭, ×, 저장 서비스에 연결 없으면 탭 ⚠ · 등록 때 확인
+- [ ] [+ ENTITY 연결] 고르기 · 새 ENTITY 만들기(서비스 화면에 머묾), 이름표 → ENTITY 탭, ×, 저장 서비스에 연결 없으면 탭 ⚠ · 등록 · 서비스 탭 잠그기가 막히고 그 서비스로 이동
 - [ ] ENTITY 탭: 보기 [이 화면에서 쓰는 것 / 전체], 기존 ENTITY 원본 잠그기 → 신규 고치면 표시, 잠금 풀기, 원본 없는 새 ENTITY 의 N, [사용하는 서비스] → 다른 화면으로 이동
 - [ ] 다른 화면에서 같은 ENTITY 가 보이는지(고친 내용 반영), 쓰는 서비스가 있으면 삭제 막힘, 보고서의 사용 ENTITY
 
@@ -733,7 +860,7 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
 
 - [ ] 새 항목 등록 → 이력에 [시스템] 신규 생성(원본 단계면 원본 등록), 다시 고쳐 등록 → '수정 · …'에 이전 → 이후 값, 안 바꾸고 등록 → 이력 안 생김
 - [ ] [이력 저장] → [사용자], 거르기 [전체 · 사용자 · 시스템]
-- [ ] 항목 삭제 후 등록 → 오른쪽 '화면 이력'에 삭제 기록, 원본 잠그기 · 잠금 풀기 기록, 잠글 때 복사된 항목의 '원본에서 복사', 되살린 항목의 '원본에서 되살림'
+- [ ] 항목 삭제 후 등록 → [이력] 창(화면 이력)에 삭제 기록, 원본 잠그기 · 잠금 풀기 기록, 잠글 때 복사된 항목의 '원본에서 복사', 되살린 항목의 '원본에서 되살림'
 
 ### 자잘한 요청 (㉖) — 아직 확인 안 함
 
@@ -746,8 +873,8 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
 
 - [ ] **탭마다 따로** — SQL 만 잠그고 서비스는 원본 단계인 상태: 각 탭 위 안내 띠가 다르게 나오는지, 잠긴 탭 이름 옆 자물쇠, 저장 바에 `서비스(원본)`
 - [ ] **한 탭 잠그기 · 풀기** — 다른 탭의 입력 중 내용이 먼저 등록되고 사라지지 않는지, 그 탭만 신규로 복사되는지, 풀기 사유가 그 탭 이력에만 남는지
-- [ ] **예전 데이터** — ㉓ 때 잠근 화면(또는 그 전 데이터)이 모든 탭 잠긴 상태로 열리는지, 원본 일치 표시, 한 탭을 풀면 나머지는 그대로인지
-- [ ] **비교 탭 · 보고서 · 현황** — 잠근 탭만 비교, '원본 단계라 비교에서 뺀 탭' 안내, 보고서의 '잠근 탭', 현황의 '잠금 해제 중: 탭이름'
+- [ ] **예전 데이터** — ㉓ 때 잠근 화면(또는 그 전 데이터)이 모든 탭 잠긴 상태로 열리는지, 원본 변경 없음 표시, 한 탭을 풀면 나머지는 그대로인지
+- [ ] **보고서 · 현황** — 보고서의 '잠근 탭', 현황의 '잠금 해제 중: 탭이름' (비교 탭 항목은 ㉘로 없어짐)
 
 ### 3차 (㉓) — 확인 중 (2026-10-28 사용자: 전반적으로 잘 동작. 아래 항목별 확인은 아직)
 
@@ -755,14 +882,13 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
 
 - [x] **제목 더블클릭(㉔)** (2026-10-28 사용자 확인: "동작은 잘되고있어") — 한 번 클릭은 안 고쳐지고, 더블클릭하면 입력칸 모양 + 전체 선택, Enter/다른 곳 클릭으로 마침, Esc 로 되돌림(● 도 사라짐), SQL 제목 대문자 변환, 한글 입력
 - [ ] **원본 단계** — 새 화면: 안내 띠 · SQL/서비스/오브젝트/공통코드관리에 원본 입력 → [등록](원본 임시 저장, ●가 사라짐) → 다시 열어도 남는지
-- [ ] **잠그기** — [원본 등록 후 잠그기] → 화면이 신규 단계로 다시 그려지고, 모든 탭에 원본이 복사되어 있는지(● 없음, 상태 표시 없음 = 동일). 원본 일치 표시
+- [ ] **잠그기** — [원본 등록 후 잠그기] → 화면이 신규 단계로 다시 그려지고, 모든 탭에 원본이 복사되어 있는지(● 없음, 상태 표시 없음 = 동일). 원본 변경 없음 표시
 - [ ] **신규 단계 표시** — 정의 칸을 고치면 노랑 + '원본: 값', 표 칸을 고치면 노랑(마우스 올리면 원본), 줄 추가 초록, 줄 삭제 → 표 아래 '삭제된 줄 n' → [되살리기]
 - [ ] **항목 상태** — 탭 이름 뒤 '변경' · '신규'([+ 추가]로 만든 것), 항목 삭제 → '삭제됨' 탭(취소선) → 눌러서 읽기 전용 보기 → [되살리기], 탭 줄 오른쪽 요약
 - [ ] **SQL** — 신규 블록 왼쪽 원본 · 바뀐 줄 색칠, SQL 정의 · 파라미터 표시, 원본 선택을 바꾸면 '삭제됨' 탭이 바뀌는지, 삭제된 SQL 되살리기
 - [ ] **붙여넣기 · Ctrl+Z** — 표에 붙여넣은 뒤 되돌리기해도 '변경' 표시가 맞는지(줄 id 유지)
 - [ ] **잠금 풀기 → 다시 잠그기** — 등록 안 된 변경이 있을 때 먼저 등록하는지, 원본 단계로 바뀌는지, 원본에 항목을 새로 넣고 다시 잠그면 그것만 신규로 복사되는지(신규에서 지운 것은 안 돌아옴)
 - [ ] **예전 데이터** — 이미 잠긴 화면(2차까지의 데이터): 정의서 예전 items.json 이 원본으로, 신규는 복사본으로 열리는지(● 없음). 예전 SQL 은 그대로
-- [ ] **비교 탭** — 원본 단계 안내 / 신규 단계: SQL · 정의서 항목 목록 · 이름 눌러 이동
 - [ ] **보고서** — 정의서 '원본 대비' 표(구분 열, '값 (원본: …)'), SQL 정의 · 파라미터 표
 - [ ] **트리 검색 · 메뉴 복사** — 새 파일(asis.json/tobe.json)에서 찾는지, 복사한 화면이 원본 단계로 시작하는지
 
@@ -814,12 +940,15 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
 
 ## 6. 남은 일 / 논의할 것
 
-### 3차에서 생긴 것 (㉓)
+### 3차에서 생긴 것 (㉓ ~ ㉟)
+
+- **ENTITY 에 표가 필요한지** (㉞) — 사용자 확인 중. 필요하면 `ENTITY_DEF.grids` + `GRID_COLUMNS['entity.<키>']`
+- **브라우저 확인** — 5장의 ㉓ ~ ㉟ 항목 대부분이 아직 확인 전
 
 1. **원본 단계의 신규 데이터** — 원본 단계에서는 신규 쪽을 숨깁니다. 예전에 잠그지 않은 채 신규 SQL 을 넣어 둔 화면은 잠근 뒤에야 보입니다
 2. **예전에 잠근 화면의 정의서 원본** — 다음에 다시 잠글 때까지 원본 해시 대상이 아닙니다(그때 asis.json 이 만들어짐)
 3. **표가 아주 클 때** — 상태 계산이 입력마다 정의서 항목 전체를 비교합니다. 느려지면 상태 계산도 `scheduleChangeMarks`처럼 미루면 됨
-4. **원본 SQL 의 이름(제목)이 바뀐 것** — 탭 상태에는 '변경'으로 반영, 비교 탭에 '원본 이름'으로 표시. 블록 안에는 따로 표시하지 않음
+4. **원본 SQL 의 이름(제목)이 바뀐 것** — 탭 상태에는 '변경'으로 반영. 블록 안에는 따로 표시하지 않음(예전 비교 탭의 '원본 이름' 표시는 ㉘로 없어짐)
 5. **예전 원본 파일(asis/files)** — 화면에서 올리지 않으므로 원본 단계에서도 추가할 곳이 없음(그대로 보관 · 해시만)
 
 ### 2차에서 생긴 것
@@ -846,9 +975,19 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
 
 ## 7. 변경된 파일
 
-### 3차 (아직 커밋 안 함 — ㉓ · ㉔ · ㉕)
+### 3차 (커밋 `82edc18` ㉓ · `9208175` ㉔ ㉕ · `314e941` ㉖ ~ ㉛ · `1a9af5b` ㉜ ~ ㉟)
 
 ```
+㉜~㉟ 신규: js/change-log.js  js/entity-data.js  js/screen-entity.js  js/screen-entity-links.js
+      수정: index.html (스크립트 4개 · #screenLogModal) css/app.css README.md HANDOFF.md
+            js/constants.js  js/state.js  js/dialog.js  js/dashboard.js  js/tree.js  js/report.js
+            js/screen.js  js/screen-data.js  js/screen-defs.js  js/screen-sqltabs.js  js/screen-save.js
+            js/screen-lock.js  js/screen-changes.js  js/layer-diff.js
+㉖~㉛ 신규: js/source-diff.js
+      수정: index.html (스크립트 · [소스 비교] 창) css/app.css README.md HANDOFF.md
+            js/constants.js  js/state.js  js/dialog.js  js/main.js  js/tree.js
+            js/screen.js  js/screen-data.js  js/screen-blocks.js  js/screen-sqltabs.js  js/screen-grid.js
+            js/screen-save.js  js/screen-lock.js  js/diff.js  js/layer-diff.js
 ㉕ 수정: js/constants.js  js/screen-data.js  js/screen-lock.js(다시 씀)  js/screen.js  js/screen-defs.js  js/screen-sqltabs.js
         js/screen-save.js  js/screen-changes.js  js/screen-files.js  js/diff.js  js/report.js  js/dashboard.js  js/tree.js
         css/app.css  README.md  HANDOFF.md
@@ -859,7 +998,7 @@ ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안
        js/screen-save.js(다시 씀)  js/diff.js  js/report.js  js/tree.js  js/dashboard.js(문구)
 ```
 
-### 2차 (사용자가 커밋함)
+### 2차 (커밋 `6e125c3` ~ `cc883c2`)
 
 ```
 신규:  js/screen-sqltabs.js, js/screen-defs.js, js/screen-grid.js, js/sql-complete.js, js/vendor/ace-ext-language_tools.js

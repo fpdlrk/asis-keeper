@@ -67,17 +67,21 @@ const hasGridDiff = diff => diff.added.size > 0 || diff.deleted.length > 0 || di
  * @param {string} tab 정의서 탭
  * @param {object|null} before 원본 항목 (없으면 신규 항목)
  * @param {object} after 신규 항목
- * @returns {{state: string, titleChanged: boolean, info: string[], grids: object}} grids: 표 키 → diffGridRows 결과
+ * @returns {{state, titleChanged, info: string[], grids: object, linksAdded: string[], linksRemoved: string[]}}
+ *   grids: 표 키 → diffGridRows 결과 · links: 서비스의 ENTITY 연결(entityIds) 중 새로 연결 / 연결을 푼 id
  */
 function diffDefItem(tab, before, after) {
-  const {info: infoFields = [], grids: gridList} = DEF_TABS[tab];
-  if (!before) return {state: 'new', titleChanged: false, info: [], grids: {}};
+  const {info: infoFields = [], grids: gridList} = defConfigOf(tab);
+  if (!before) return {state: 'new', titleChanged: false, info: [], grids: {}, linksAdded: [], linksRemoved: []};
   const grids = Object.fromEntries(gridList.map(([key]) =>
     [key, diffGridRows(gridValueOf(before, key), gridValueOf(after, key), GRID_COLUMNS[`${tab}.${key}`].cols.length)]));
   const titleChanged = comparableValue(before.title) !== comparableValue(after.title);
   const info = changedInfoKeys(infoFields, before.info, after.info);
-  const changed = titleChanged || info.length > 0 || Object.values(grids).some(hasGridDiff);
-  return {state: changed ? 'changed' : 'same', titleChanged, info, grids};
+  const beforeLinks = before.entityIds || [], afterLinks = after.entityIds || [];
+  const linksAdded = afterLinks.filter(id => !beforeLinks.includes(id));
+  const linksRemoved = beforeLinks.filter(id => !afterLinks.includes(id));
+  const changed = titleChanged || info.length > 0 || Object.values(grids).some(hasGridDiff) || linksAdded.length > 0 || linksRemoved.length > 0;
+  return {state: changed ? 'changed' : 'same', titleChanged, info, grids, linksAdded, linksRemoved};
 }
 
 /**

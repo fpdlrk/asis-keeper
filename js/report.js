@@ -64,6 +64,10 @@ async function collectScreenReportData(screenInfo) {
     tobe: await collectFileInfos(dir, FILE_DIRS.tobe),
     attach: await collectFileInfos(dir, FILE_DIRS.attach)
   };
+  // 이 화면의 서비스가 쓰는 ENTITY (서비스 탭에서 지금 고치는 쪽 기준, 프로젝트 공통 목록은 buildReport 가 읽어 둠)
+  const serviceItems = isTabLockedIn(meta, 'service') ? data.defs.service.tobe : data.defs.service.asis;
+  const usedIds = [...new Set(serviceItems.flatMap(item => item.entityIds || []))];
+  data.entities = usedIds.map(id => (app.entityCache || []).find(record => record.id === id)).filter(Boolean);
   data.asisBlocks = await loadSqlBlocks(dir, meta, 'asis');
   data.tobeBlocks = await loadSqlBlocks(dir, meta, 'tobe');
   data.changedFiles = (await findChangedFiles(dir, lockedHashesOf(meta))).map(item => item.path);
@@ -196,6 +200,7 @@ function screenReportHtml(data, index) {
 
   // 정의서
   for (const tab of Object.keys(DEF_TABS)) html += definitionSectionHtml(section, tab, data.defs[tab], isTabLockedIn(meta, tab));
+  html += entitySectionHtml(section, data.entities);
 
   // 참고 파일
   if (data.files.attach.length) {
@@ -239,6 +244,7 @@ function definitionSectionHtml(section, tab, layers, locked) {
       const table = reportGridTableHtml(GRID_COLUMNS[`${tab}.${key}`].cols, gridValueOf(item, key), compareWith ? gridValueOf(compareWith, key) : null);
       if (table) content += `<div class="cap">${escapeHtml(gridLabel)}</div>` + table;
     }
+    if ((item.entityIds || []).length) content += `<div class="cap">사용 ENTITY</div><p class="note">${escapeHtml(item.entityIds.map(entityTitleOf).join(', '))}</p>`;
     if (!content && !state) continue;
     const stateNote = state && state !== 'same' ? ` <span class="note">${ITEM_STATE_LABELS[state]}${gone ? ' (원본에만 있음)' : ''}</span>` : '';
     body += `<h4>${escapeHtml(item.title || UNNAMED_DEF_TITLE)}${stateNote}</h4>` + content;
@@ -247,11 +253,34 @@ function definitionSectionHtml(section, tab, layers, locked) {
 }
 
 /**
+ * 이 화면의 서비스가 쓰는 ENTITY (프로젝트 공통) — 잠긴 ENTITY 는 신규를 원본과 비교해 보여 줌
+ * @returns {string} 없으면 ''
+ */
+function entitySectionHtml(section, records) {
+  if (!records.length) return '';
+  let body = '';
+  for (const record of records) {
+    const data = record[entityLayerOf(record)];
+    const original = record.locked ? record.asis : null;
+    const state = !record.asis ? 'new' : record.locked ? diffDefItem('entity', record.asis, record.tobe).state : '';
+    let content = reportInfoTableHtml(ENTITY_DEF.info, data.info, original ? original.info || {} : null);
+    for (const [key, gridLabel] of ENTITY_DEF.grids) {
+      const table = reportGridTableHtml(GRID_COLUMNS[`entity.${key}`].cols, gridValueOf(data, key), original ? gridValueOf(original, key) : null);
+      if (table) content += `<div class="cap">${escapeHtml(gridLabel)}</div>` + table;
+    }
+    const stateNote = state && state !== 'same' ? ` <span class="note">${ITEM_STATE_LABELS[state]}</span>` : '';
+    body += `<h4>${escapeHtml(data.title || UNNAMED_DEF_TITLE)}${stateNote}</h4>` + content;
+  }
+  return section('사용 ENTITY (프로젝트 공통)') + body;
+}
+
+/**
  * 보고서 HTML 전체
  * @param {'prod'|'dev'|'all'} scope 운영만 / 개발 이상 / 전체
  * @returns {Promise<string|null>} 조건에 맞는 화면이 없으면 null
  */
 async function buildReport(title, scope) {
+  app.entityCache = await loadEntities(app.root);   // ENTITY 이름 · 내용 (entityTitleOf · entitySectionHtml)
   const screens = await findAllScreens(app.root);
   const counts = [0, 0, 0, 0];
   screens.forEach(screenInfo => counts[statusIndexOf(screenInfo.meta)]++);

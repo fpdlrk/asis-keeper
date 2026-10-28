@@ -9,7 +9,10 @@
 :root {
   --ink: #1f2328; --text: #2c2f33; --sub: #5f6670; --faint: #8a9099;
   --disabled: #a9aeb5;
-  --new-badge-bg: #e5484d;   /* 탭의 신규(원본 없음) 표시 N 의 배경 */   /* 고칠 수 없는(disabled) 입력칸 · 고르는 칸 · 단추의 글자 */
+  --new-badge-bg: #e5484d;
+  --alert: #e03131;
+  --new-note-bg: #e9f7ee;   /* 원본 없는 새 항목 안내 띠 배경 (엷은 녹색) */   /* 바로 알아봐야 하는 안내 글자 (예: 저장 서비스에 ENTITY 없음) */
+  --log-user: #1d4f86; --log-user-bg: #e8f0fa; --log-system: #5f6670; --log-system-bg: #eef0f3;   /* 이력 [사용자] / [시스템] 꼬리표 */   /* 탭의 신규(원본 없음) 표시 N 의 배경 */   /* 고칠 수 없는(disabled) 입력칸 · 고르는 칸 · 단추의 글자 */
   --line: #e6e8eb; --line2: #f0f1f3; --field: #dfe2e6; --soft: #f7f8fa; --rail: #fafbfc;
   --acc: #2f3b4c; --acc-h: #1f2836; --acc-soft: #eef1f5; --focus: #7d8ea3;
   --s0: #6b7480; --s1: #2b6cb0; --s2: #b7791f; --s3: #2f855a;
@@ -100,20 +103,11 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .gauge i { display: block; height: 100%; width: 0; background: var(--s3); transition: width .3s; }
 
 #main { min-width: 0; min-height: 0; overflow: auto; }
-#app.has-screen { grid-template-columns: 264px minmax(0, 1fr) 300px; }
-
-/* 오른쪽 영역: 메모(위 50%) · 첨부(아래 50%), 넘치면 각각 스크롤 */
-.rside { display: flex; flex-direction: column; min-height: 0; background: var(--rail); border-left: 1px solid #eceef1; }
-.rs-sec { flex: 1 1 0; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 0 14px 14px; }
-.rs-sec + .rs-sec { border-top: 1px solid var(--line); }
-.rs-h { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 14px 0 6px; background: var(--rail); color: var(--ink); }
-.rs-h .muted { font-size: 12px; }
-.rs-sec .ta { flex: 1 1 auto; min-height: 120px; height: auto !important; resize: none; }
-.rs-sec .hint { margin: 0; }
-.rs-sec .drop { padding: 10px 12px; }
-.rs-sec .drop-t { flex-basis: 100%; font-size: 12px; }
-.rs-sec .files { margin-top: 0; }
-.rs-sec .files .fp { flex-basis: 100%; }
+/* '요약·첨부' 탭: 변경 요약(메모) · 첨부 — 제목 옆에 작은 안내 */
+.attach-sec + .attach-sec { margin-top: 26px; }
+.sec-h { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+/* 화면 이력 창 (상태 옆 [이력]) */
+.sl-list { max-height: 60vh; overflow-y: auto; margin-top: 12px; padding: 4px 12px; border: 1px solid var(--line); border-radius: var(--r); }
 
 /* ---- 4. 트리 ---- */
 .tree, .tree ul { list-style: none; margin: 0; padding: 0; }
@@ -174,6 +168,9 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 /* 안내 (원본이 잠긴 탭 위 — screen-lock.js): 표 칸에 입력할 때와 같은 푸른 배경 · 푸른 선 */
 .banner.note { border: 1px solid var(--grid-focus-line); background: var(--grid-focus-bg); }
 .banner.note > svg { flex: none; color: var(--acc); }
+/* 원본 없는 새 항목 안내 (예: 새 ENTITY — screen-entity.js): 엷은 녹색 배경, 선 없음 */
+.banner.new-note { background: var(--new-note-bg); }
+.banner.new-note > svg { flex: none; color: var(--ok); }
 .banner.bad { background: var(--bad-bg); color: var(--bad); align-items: flex-start; }
 .banner.bad ul { margin: 6px 0 0; padding-left: 18px; }
 /* 잠금 해제 이력 띠: 기존 SQL 탭 안내 바로 아래에 쌓임 */
@@ -250,7 +247,6 @@ input:disabled, select:disabled, textarea:disabled { color: var(--disabled); -we
 .mk.dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--warn-dot); }
 
 .scr-body { flex: 1; padding: 20px 32px 28px; }
-.panel.narrow { max-width: 900px; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
 .sec { display: flex; align-items: baseline; gap: 8px; margin: 28px 0 10px; font-size: 15px; font-weight: 700; color: var(--ink); }
 .sec .muted { font-size: 12px; font-weight: 400; }
@@ -259,12 +255,56 @@ input:disabled, select:disabled, textarea:disabled { color: var(--disabled); -we
 /* SQL 마다 쌓는 이력 (SQL 탭 본문 아래) — 목록(최근 것이 위) + 입력칸 */
 .wlog-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }
 /* 한 항목 = 두 줄: 날짜 · 작업자 / 내용 */
-.wlog-list li { display: flex; flex-direction: column; gap: 3px; padding: 8px 12px; font-size: 13px; color: var(--text); }
+/* 이력 한 줄: [출처] 내용 [날짜] */
+.wlog-list li { display: flex; align-items: baseline; gap: 8px; padding: 7px 12px; font-size: 13px; color: var(--text); }
 .wlog-list li + li { border-top: 1px solid #eceef1; }
 .wlog-list li.muted { color: var(--sub); }
-.wl-meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); }
-.wl-meta .sep { color: var(--faint); }
-.wl-t { min-width: 0; white-space: pre-wrap; word-break: break-word; }
+.wl-d { font-size: 12px; color: var(--sub); white-space: nowrap; }   /* 내용 바로 뒤의 [날짜] */
+.wl-t { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; }
+/* 이력 출처 꼬리표 [시스템] / [사용자] (change-log.js) · 거르기 단추 */
+.wl-src { flex: none; padding: 0 6px; border-radius: 3px; font-size: 11px; font-weight: 700; line-height: 18px; }
+.wl-src.user { background: var(--log-user-bg); color: var(--log-user); }
+.wl-src.system { background: var(--log-system-bg); color: var(--log-system); }
+.wlog-list li.src-system .wl-t { color: var(--sub); }
+.wlog-list[data-filter="user"] li.src-system, .wlog-list[data-filter="system"] li.src-user { display: none; }
+.wlog-h { display: flex; align-items: center; gap: 6px; }
+/* 작은 선택 단추 묶음 (ENTITY 탭 보기 등) */
+.seg { display: inline-flex; border: 1px solid var(--field); border-radius: 4px; overflow: hidden; }
+.seg button { height: 24px; padding: 0 10px; border: 0; background: #fff; color: var(--sub); font-size: 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--field); }
+.seg button.on { background: var(--acc-soft); color: var(--ink); font-weight: 600; }
+/* 추가 창의 꼭 고르는 칸 (서비스 유형 · ENTITY 구분) */
+.radio-row { display: flex; flex-direction: column; gap: 6px; }
+.radio { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
+.radio input { width: 15px; height: 15px; margin: 0; accent-color: var(--acc); }
+/* 서비스의 '사용 ENTITY' (screen-entity-links.js) */
+.ent-links { border-top: 1px solid var(--line); }
+/* 제목은 표 제목과 같은 모양(ENTITY), 작은 안내는 제목 바로 옆 */
+.ent-links-h { display: flex; align-items: center; gap: 8px; padding: 10px 12px 6px; }
+.ent-hint { font-size: 12px; font-weight: 400; color: var(--sub); }
+.ent-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 12px 12px; }
+.ent-chip { display: inline-flex; align-items: center; height: 26px; border: 1px solid var(--field); border-radius: 13px; background: #fff; overflow: hidden; }
+.ent-chip.ent-new { border-color: var(--mark-add-line); background: var(--mark-add-bg); }
+.ent-go { height: 100%; padding: 0 10px; border: 0; background: none; color: var(--acc); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.ent-go:hover { text-decoration: underline; }
+.ent-x { width: 22px; height: 100%; border: 0; border-left: 1px solid var(--line2); background: none; color: var(--faint); cursor: pointer; }
+.ent-x:hover { color: var(--bad); }
+.ent-empty { color: var(--alert); font-size: 12.5px; font-weight: 700; }   /* 저장 서비스에 ENTITY 가 없음 — 바로 눈에 띄게 밝은 빨강 */
+.ent-removed { padding: 0 12px 10px; color: var(--bad); font-size: 12px; text-decoration: line-through; }
+/* ENTITY 탭 (screen-entity.js) */
+.ent-phase { padding: 8px 12px 0; }
+.ent-phase .banner { margin-bottom: 4px; }
+.ent-usage:empty { display: none; }
+.ent-usage-box { margin: 8px 12px 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--rail); font-size: 12.5px; }
+.ent-usage-box ul { margin: 6px 0 0; padding-left: 18px; }
+.link-btn { padding: 0; border: 0; background: none; color: var(--acc); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; text-align: left; }
+.wlog-filter { display: inline-flex; border: 1px solid var(--field); border-radius: 4px; overflow: hidden; }
+.wlog-filter button { height: 22px; padding: 0 8px; border: 0; background: #fff; color: var(--sub); font-size: 11.5px; cursor: pointer; }
+.wlog-filter button + button { border-left: 1px solid var(--field); }
+.wlog-filter button.on { background: var(--acc-soft); color: var(--ink); font-weight: 600; }
+/* 화면 이력(오른쪽)의 시스템 기록 줄: 다음 줄에 내용 */
+.stlog li.act { white-space: normal; }
+.stlog .act-t { padding-left: 2px; color: var(--sub); font-size: 12px; overflow-wrap: anywhere; }
 .wlog-in { display: flex; align-items: flex-end; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line); background: var(--soft); }
 .wlog-in textarea { flex: 1; min-width: 0; min-height: 52px; padding: 6px 8px; border: 1px solid var(--field); border-radius: var(--r);
   background: #fff; font: inherit; font-size: 13px; resize: vertical; }
@@ -294,7 +334,8 @@ input:disabled, select:disabled, textarea:disabled { color: var(--disabled); -we
 .sqltabs { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 /* 탭 줄: 스크롤바는 숨기고(높이가 바뀌지 않게) 넘치면 양 끝에 ‹ › + 가려진 쪽 흐림 (screen-sqltabs.js updatePillTabOverflow) */
 .pilltabs-scroll { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
-.sqltabs-list { flex: 1; min-width: 0; display: flex; gap: 6px; padding: 2px 0; overflow-x: auto; scrollbar-width: none; }
+/* 위 · 왼쪽 여백: 탭 가장자리에 띄운 N 표시가 잘리지 않게 (가로 스크롤 상자는 넘친 부분을 자름) */
+.sqltabs-list { flex: 1; min-width: 0; display: flex; gap: 6px; padding: 5px 0 2px 4px; overflow-x: auto; scrollbar-width: none; }
 .sqltabs-list::-webkit-scrollbar { display: none; }
 .sqltabs-list.fade-l { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 32px); mask-image: linear-gradient(to right, transparent 0, #000 32px); }
 .sqltabs-list.fade-r { -webkit-mask-image: linear-gradient(to left, transparent 0, #000 32px); mask-image: linear-gradient(to left, transparent 0, #000 32px); }
@@ -326,10 +367,11 @@ input:disabled, select:disabled, textarea:disabled { color: var(--disabled); -we
 .sqltab-st { flex: none; margin-left: 5px; font-style: normal; font-size: 11px; font-weight: 700; }
 .sqltab-st:empty { display: none; }
 .sqltab[data-st="changed"] .sqltab-st { color: var(--warn); }
-/* 신규(원본 없음): 빨간 동그라미 안의 흰 N */
-.sqltab[data-st="new"] .sqltab-st, .sqltab.on[data-st="new"] .sqltab-st { display: inline-flex; align-items: center; justify-content: center;
-  width: 16px; height: 16px; border-radius: 50%; background: var(--new-badge-bg); color: #fff; font-size: 10px; line-height: 1; opacity: 1;
-  order: -1; margin: 0; }   /* 이름 앞에 (다른 상태 글자는 이름 뒤) */
+/* 신규(원본 없음): 빨간 동그라미 안의 흰 N — 탭 왼쪽 위 가장자리에 겹쳐 띄움(absolute). 탭 안 글자 줄에 끼지 않아 탭 높이 · 모양이 다른 탭과 같음 */
+.sqltab { position: relative; }
+.sqltab[data-st="new"] .sqltab-st, .sqltab.on[data-st="new"] .sqltab-st { position: absolute; top: -4px; left: -4px; z-index: 1;
+  display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin: 0; border-radius: 50%;
+  background: var(--new-badge-bg); box-shadow: 0 0 0 1.5px #fff; color: #fff; font-size: 9px; line-height: 1; opacity: 1; }
 .sqltab.gone { border-style: dashed; }
 .sqltab.gone .sqltab-t { text-decoration: line-through; color: var(--sub); }
 .sqltab.gone .sqltab-st { color: var(--bad); }
@@ -337,6 +379,8 @@ input:disabled, select:disabled, textarea:disabled { color: var(--disabled); -we
 /* 탭 줄 오른쪽 요약: 변경 n · 신규 n · 삭제 n */
 .tabs-sum { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .tabs-sum:empty { display: none; }
+/* 탭 경고 ⚠ (예: 저장 서비스인데 ENTITY 가 없음 — markPillTabWarning) */
+.sqltab.warn .sqltab-t::before { content: '⚠ '; color: var(--warn-dot); }
 .st-changed { color: var(--warn); } .st-new { color: var(--ok); } .st-gone { color: var(--bad); }
 .sqltabs-tools { flex: none; display: flex; gap: 6px; }
 /* 탭 줄 오른쪽 [+ SQL 추가] · [+ 서비스 추가] 등 항목 추가 단추 */
@@ -550,7 +594,7 @@ table.grid input.invalid, table.grid input.invalid:focus { color: var(--bad); bo
 .opt-check input { width: 14px; height: 14px; margin: 0; accent-color: var(--acc); }
 .dfbody { flex: 1; min-height: 0; overflow: auto; border-top: 1px solid var(--line2); padding-top: 12px; }
 /* 소스 비교 창 (source-diff.js): SQL 블록의 원본/신규와 같은 나란히 보기, 편집기가 창 높이를 채움 */
-.mbox.sdbox { height: 88vh; overflow: hidden; }
+.mbox.sdbox { width: min(95vw, 100%); height: 88vh; overflow: hidden; }   /* 화면 폭의 95% (.mbox.wide 의 1200px 제한보다 우선, 좁은 화면에서는 창 여백 안까지) */
 .sd-blk { flex: 1; min-height: 0; display: flex; }
 .sd-blk .blk-b { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); }
 .sd-blk .pane { display: flex; flex-direction: column; min-height: 0; }
@@ -595,8 +639,6 @@ table.grid input.invalid, table.grid input.invalid:focus { color: var(--bad); bo
 @media (max-width: 860px) {
   #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); }
   .side { max-height: 40vh; border-right: 0; border-bottom: 1px solid #eceef1; }
-  #app.has-screen { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; }
-  .rside { max-height: 60vh; border-left: 0; border-top: 1px solid #eceef1; }
   .scr-head, .scr-body, .home { padding-left: 16px; padding-right: 16px; }
   /* 좁은 화면: 요약 줄은 지금 탭 이름만 남겨 한 줄 유지 */
   .scr-mini-bar { gap: 8px; padding: 0 16px; }

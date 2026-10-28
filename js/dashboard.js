@@ -18,10 +18,6 @@ const STATUS_WITH_PARTICLE = {'요청': '요청으로', '진행': '진행으로'
 function showHome() {
   app.screen = null;
   renderBreadcrumb();
-  // 오른쪽 이력·메모 영역은 화면을 열었을 때만
-  $('#rside').hidden = true;
-  $('#rside').innerHTML = '';
-  $('#app').classList.remove('has-screen');
 
   const main = $('#main');
   const seq = ++homeRenderSeq;

@@ -109,7 +109,7 @@ function renderGoneSqlBlocks() {
 function reviveDefItem(tab, asisId) {
   const original = (app.screen.asisDefItems[tab] || []).find(item => item.id === asisId);
   if (!original) return;
-  insertDefItem(tab, copyDefItemAsTobe(original));
+  insertDefItem(tab, {...copyDefItemAsTobe(original), createdNote: '원본에서 되살림'});   // 등록할 때 이력 글 (change-log.js)
   toast('원본을 되살렸습니다. 등록해야 반영됩니다.');
 }
 
@@ -123,6 +123,7 @@ function reviveSqlBlock(asisId) {
     asisId,
     definition: readSqlDefinition('asis', original.element)
   });
+  findSqlBlock('tobe', element.dataset.id).createdNote = '원본에서 되살림';   // 등록할 때 이력 글 (change-log.js)
   refreshPairedBlocks();
   renderSqlTabs('tobe');
   activateSqlTab('tobe', element.dataset.id);
@@ -228,7 +229,9 @@ function scheduleChangeMarks() {
  *   SQL 탭이면 고른 신규 블록, 정의서 탭이면 고른 항목 — 보이지 않는 항목은 탭을 고를 때 계산
  */
 function refreshChangeMarks() {
-  if (!app.screen || !LAYER_TABS.includes(app.tab) || !isTabLocked(app.tab)) return;
+  if (!app.screen) return;
+  if (app.tab === 'entity') return markActiveEntity();   // ENTITY 는 ENTITY 마다 잠금 (screen-entity.js)
+  if (!LAYER_TABS.includes(app.tab) || !isTabLocked(app.tab)) return;
   if (app.tab === 'sql') markActiveSqlBlock();
   else markActiveDefItem(app.tab);
 }
@@ -258,4 +261,5 @@ function markActiveDefItem(tab) {
   for (const [key] of DEF_TABS[tab].grids) {
     applyGridMarks(document.getElementById(defGridTableId(tab, itemId, key)), original ? gridValueOf(original, key) : null);
   }
+  if (defConfigOf(tab).entityLinks) applyEntityLinkMarks(element, item, original);   // 서비스의 ENTITY 연결
 }

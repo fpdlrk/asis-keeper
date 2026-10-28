@@ -77,7 +77,11 @@ const TEXT_FIELD_FILES = {
    ※ 공통코드관리 탭의 키는 예전 이름 그대로 'code' (저장 폴더 code/ 와 맞춤) */
 const DEF_TABS = {
   // 서비스 표의 키는 예전 이름 그대로 (overview = 메세지정의, attrs = 기능정의, funcs = 권한제어) — 저장된 데이터와 맞추기 위함. preprocess = 전처리
-  service: {label: '서비스', dir: 'service', info: [
+  // serviceType: 조회 / 저장 — 저장 서비스는 ENTITY 를 연결함(entityLinks, screen-entity-links.js). 추가할 때 꼭 고르게 함(addChoice)
+  service: {label: '서비스', dir: 'service', entityLinks: true,
+    addChoice: {key: 'serviceType', label: '서비스 유형', options: [['조회', '조회용'], ['저장', '저장용 — ENTITY 를 연결합니다']]},
+    info: [
+    {key: 'serviceType', label: '서비스 유형', options: ['', '조회', '저장'], width: '100px'},
     {key: 'transactionName', label: '트랜잭션명'},
     {key: 'commandClass', label: '커멘드클래스명'},
     {key: 'twoPcYn', label: '2PC지원여부'},
@@ -100,7 +104,7 @@ const DEF_TABS = {
     {key: 'endDate', label: '종료일', type: 'date'},
     {key: 'dataChangeYn', label: '자료변경여부'},
     {key: 'remark', label: '비고'}
-  ], grids: [['common', '공통코드'], ['system', '시스템코드관리']]}
+  ], grids: [['common', '공통코드관리'], ['system', '시스템코드관리']]}
 };
 
 /* 예전 '개요' 표(첫 줄)를 정의 칸으로 옮길 때의 순서 — 공통코드관리 · 오브젝트의 개요 표가 정의 칸이 됨
@@ -150,7 +154,33 @@ const LEGACY_DEF_FILES = {
   object: {grid: 'object/overview.json', texts: {attrs: 'object/attributes.md', children: 'object/children.md'}},
   code: {grid: 'code/overview.json', texts: {common: 'code/common.md', system: 'code/system.md'}}
 };
-/* 원본/신규가 있는 탭 (탭마다 원본 잠금이 따로 있음 — screen-data.js tabLocksOf) */
+/* ---- ENTITY (프로젝트 공통) ----
+   저장 서비스가 쓰는 ENTITY. 여러 화면의 여러 서비스가 같은 ENTITY 를 함께 쓰므로 화면 폴더가 아니라 루트(ENTITY_FILE)에 한 벌만 보관합니다.
+   ENTITY 마다 원본 · 신규 · 잠금을 함께 가집니다 (entity-data.js). 화면마다 'ENTITY' 탭으로 보고 고칩니다 (screen-entity.js).
+   info: 정의 칸 (사용자가 정한 항목). grids: 표 — 아직 없음 (필요하면 [표 키, 이름] 과 GRID_COLUMNS['entity.<표 키>'] 추가)
+   addChoice: 추가할 때 꼭 고르는 것 — 원본(기존 ENTITY)부터 넣을지, 원본 없는 새 ENTITY 인지 */
+const ENTITY_DEF = {
+  label: 'ENTITY',
+  addChoice: {key: 'origin', label: 'ENTITY 구분', options: [['original', '기존 ENTITY — 원본부터 입력'], ['new', '새 ENTITY — 원본 없음']]},
+  info: [
+    // 엔터티명은 블록 위 이름칸(제목)이 맡으므로 정의 칸에 두지 않음
+    {key: 'displayName', label: '화면표시명'},
+    {key: 'historyTypeCode', label: '이력관리 유형 코드'},
+    {key: 'unitWorkCode', label: '단위업무코드'},
+    {key: 'writerType', label: '작성자 유형'},
+    {key: 'logYn', label: '로그사용여부'}
+  ],
+  grids: []
+};
+/* 프로젝트 공통 ENTITY 를 보관하는 루트의 파일 ('.' 으로 시작하는 폴더라 트리에 나오지 않음) */
+const ENTITY_FILE = '.entity/entities.json';
+/* 저장 서비스의 유형 값 (이 값일 때 ENTITY 연결 영역이 나옴) */
+const SERVICE_TYPE_SAVE = '저장';
+
+/** 정의서 탭 · ENTITY 의 설정 (그리기 · 비교 · 이력이 함께 씀) */
+const defConfigOf = tab => (tab === 'entity' ? ENTITY_DEF : DEF_TABS[tab]);
+
+/* 원본/신규가 있는 탭 (탭마다 원본 잠금이 따로 있음 — screen-data.js tabLocksOf). ENTITY 는 ENTITY 마다 따로 잠금 */
 const LAYER_TABS = ['sql', ...Object.keys(DEF_TABS)];
 /* 예전(화면 하나에 잠금 하나) meta 값 — 읽을 때 탭별 잠금으로 바꾸고, 잠그거나 풀 때 지움 */
 const LEGACY_LOCK_KEYS = ['asisLocked', 'asisSavedAt', 'asisLockedIds', 'hashes', 'asisUnlockLog'];

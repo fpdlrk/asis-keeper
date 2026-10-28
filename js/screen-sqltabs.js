@@ -10,7 +10,7 @@
        블록은 모두 화면에 그대로 있으므로 등록·비교 탭·보고서는 예전처럼 화면 순서대로 읽습니다.
      - [+ SQL 추가] 창: 이름·SQL(필수) · 비교할 원본 SQL(신규만) · 이력(선택)
        창은 처음 추가할 때만 쓰고, 고치는 것은 탭 본문에서 합니다.
-     - 항목 이력(공통): item.log = [{at, by, text}]
+     - 항목 이력(공통): item.log = [{at, by, text, source}] — source 'user'(직접 남김) · 'system'(자동, change-log.js)
          SQL  → meta.sqlBlocks[kind][].log      정의서 → <dir>/asis.json · tobe.json 의 [].log
          이미 등록된 항목  → [이력 저장] 하면 바로 파일에 저장
          아직 등록 전인 항목 → 화면에만 남았다가 그 항목을 등록할 때 함께 저장
@@ -114,6 +114,15 @@ function markPillTab(barId, id, title, dirty, state = '') {
   tab.classList.toggle('dirty', dirty);
 }
 
+/** 탭에 ⚠ 경고 (예: 저장 서비스인데 ENTITY 가 없음). message 가 비면 지움 */
+function markPillTabWarning(barId, id, message) {
+  const tab = $(`#tabs-${barId} [data-tab-bid="${id}"]`);
+  if (!tab) return;
+  tab.classList.toggle('warn', !!message);
+  const title = tab.querySelector('.sqltab-t').textContent;
+  tab.title = message ? `${title} — ${message}` : title;
+}
+
 /* ---- 넘칠 때: ‹ › 단추 · 흐림 표시 · 끌어서 스크롤 ---- */
 
 /* ‹ › 한 번에 움직일 비율 (탭 줄 너비 기준) */
@@ -213,9 +222,9 @@ function showAllPillTabs(barId, button) {
 }
 
 /** 탭 고르기 · 삭제 · 추가 — SQL 탭 줄이면 이 파일, 정의서 탭 줄이면 screen-defs.js 로 넘김 */
-const activatePillTab = (barId, id) => (isSqlTabBar(barId) ? activateSqlTab(barId, id) : activateDefTab(barId, id));
-const deletePillTab = (barId, id) => (isSqlTabBar(barId) ? deleteSqlBlock(barId, id) : deleteDefItem(barId, id));
-const addPillTab = barId => (isSqlTabBar(barId) ? addSqlBlock(barId) : addDefItem(barId));
+const activatePillTab = (barId, id) => (isSqlTabBar(barId) ? activateSqlTab(barId, id) : barId === 'entity' ? activateEntityTab(id) : activateDefTab(barId, id));
+const deletePillTab = (barId, id) => (isSqlTabBar(barId) ? deleteSqlBlock(barId, id) : barId === 'entity' ? deleteEntity(id) : deleteDefItem(barId, id));
+const addPillTab = barId => (isSqlTabBar(barId) ? addSqlBlock(barId) : barId === 'entity' ? addEntity() : addDefItem(barId));
 
 /* ======================= SQL 탭 ======================= */
 
@@ -388,8 +397,7 @@ function askNewSqlBlock(kind) {
 async function addSqlBlock(kind) {
   const answer = await askNewSqlBlock(kind);
   if (!answer) return;
-  const log = answer.logText ? [{at: new Date().toISOString(), by: currentWorkerName(), text: answer.logText}] : [];
-  const element = insertSqlBlock(kind, {sql: answer.sql, title: answer.title, asisId: answer.asisId, log});
+  const element = insertSqlBlock(kind, {sql: answer.sql, title: answer.title, asisId: answer.asisId, log: userLogOf(answer.logText)});
   refreshPairedBlocks();
   renderSqlTabs(kind);
   activateSqlTab(kind, element.dataset.id);
@@ -401,17 +409,32 @@ async function addSqlBlock(kind) {
 /** 등록할 때 항목 정보에 함께 적을 이력 (없으면 아무것도 적지 않음) */
 const blockLogOf = item => (item.log && item.log.length ? {log: item.log} : {});
 
+/** 이력 한 줄의 [시스템] / [사용자] 꼬리표 */
+const logSourceTagHtml = entry => `<span class="wl-src ${logSourceOf(entry)}">${LOG_SOURCE_LABELS[logSourceOf(entry)]}</span>`;
+
 /**
- * 이력 목록 (최근 것이 위) — 한 항목은 두 줄:
- *   2026.10.27 · 홍길동
- *   내용
+ * 이력 목록 (최근 것이 위) — 한 항목은 한 줄: [시스템] 신규 생성 [2026.10.27] (날짜는 내용 바로 뒤)
+ * 쓴 사람과 정확한 시각은 줄에 마우스를 올리면 보입니다.
  */
 function logItemsHtml(item) {
   const entries = (item.log || []).slice().reverse();
   if (!entries.length) return '<li class="muted">아직 남긴 이력이 없습니다.</li>';
-  return entries.map(entry => `<li title="${escapeHtml(formatDateTime(entry.at))}">`
-    + `<div class="wl-meta"><span class="wl-d">${escapeHtml(formatDay(entry.at))}</span><span class="sep">·</span><span class="wl-by">${escapeHtml(entry.by || '-')}</span></div>`
-    + `<div class="wl-t">${escapeHtml(entry.text)}</div></li>`).join('');
+  return entries.map(entry => `<li class="src-${logSourceOf(entry)}" title="${escapeHtml(`${formatDateTime(entry.at)} · ${entry.by || '-'}`)}">`
+    + logSourceTagHtml(entry)
+    + `<span class="wl-t">${escapeHtml(entry.text)} <span class="wl-d">[${escapeHtml(formatDay(entry.at))}]</span></span></li>`).join('');
+}
+
+/** 화면에 있는 그 항목의 이력 목록을 다시 그림 (이력을 남긴 뒤 · 등록 뒤) */
+function renderItemLog(scope, kind, item) {
+  const list = $(`[data-log-list="${logListKey(scope, kind, item.id)}"]`);
+  if (list) list.innerHTML = logItemsHtml(item);
+}
+
+/** [전체 · 사용자 · 시스템]: 목록에서 그 출처만 보이게 (보이기만 바꿈 — CSS .wlog-list[data-filter]) */
+function filterItemLog(button) {
+  const box = button.closest('.blk-log');
+  box.querySelector('.wlog-list').dataset.filter = button.dataset.logFilter;
+  box.querySelectorAll('[data-log-filter]').forEach(other => other.classList.toggle('on', other === button));
 }
 
 /** 이력 목록 요소를 찾을 때 쓰는 이름 (같은 id 가 SQL·정의서에 함께 있을 수 있어 종류까지 붙임) */
@@ -423,7 +446,9 @@ const logListKey = (scope, kind, itemId) => `${scope}-${kind}-${itemId}`;
  * @param {string} kind SQL 은 'asis'|'tobe', 정의서는 'service'|'object'|'code'
  */
 const itemLogHtml = (scope, kind, item) => `<div class="blk-log">
-    <div class="blk-sub">이력 <span class="muted">작업 내용 · 최근 것이 위</span></div>
+    <div class="blk-sub wlog-h">이력 <span class="muted">최근 것이 위 · 시스템 = 등록할 때 자동 기록</span><span class="sp"></span>
+      <span class="wlog-filter" role="group" aria-label="이력 거르기">${['all', 'user', 'system'].map(value =>
+        `<button type="button" class="${value === 'all' ? 'on' : ''}" data-log-filter="${value}">${value === 'all' ? '전체' : LOG_SOURCE_LABELS[value]}</button>`).join('')}</span></div>
     <ul class="wlog-list" data-log-list="${logListKey(scope, kind, item.id)}" aria-label="이력">${logItemsHtml(item)}</ul>
     <div class="wlog-in"><textarea data-log-input="${item.id}" data-log-scope="${scope}" data-kind="${kind}" rows="2" aria-label="이력 입력"
       placeholder="예: 조회 조건에 사용 여부 추가 (Ctrl+Enter 로 저장)"></textarea>
@@ -440,6 +465,13 @@ function findLogTarget(scope, kind, itemId) {
   if (scope === 'sql') {
     const savedList = (screen.meta.sqlBlocks && screen.meta.sqlBlocks[kind]) || [];
     return {item: findSqlBlock(kind, itemId), savedItem: savedList.find(saved => saved.id === itemId), persist: saveMeta};
+  }
+  if (scope === 'entity') {   // 프로젝트 공통 ENTITY — 등록된 목록을 루트 파일에
+    return {
+      item: findEntity(itemId),
+      savedItem: screen.savedEntities.find(record => record.id === itemId),
+      persist: () => saveEntities(app.root, screen.savedEntities)
+    };
   }
   return {
     item: (screen.defItems[kind] || []).find(item => item.id === itemId),
@@ -462,7 +494,7 @@ async function saveItemLog(scope, kind, itemId) {
     input.focus();
     return toast('남길 이력을 입력해 주세요.');
   }
-  const entry = {at: new Date().toISOString(), by: currentWorkerName(), text};
+  const entry = {at: new Date().toISOString(), by: currentWorkerName(), text, source: 'user'};
   try {
     if (savedItem) {
       const previousLog = savedItem.log;
@@ -478,7 +510,7 @@ async function saveItemLog(scope, kind, itemId) {
     }
     item.log = [...(item.log || []), entry];
     input.value = '';
-    $(`[data-log-list="${logListKey(scope, kind, itemId)}"]`).innerHTML = logItemsHtml(item);
+    renderItemLog(scope, kind, item);
     toast(savedItem ? '이력을 저장했습니다.' : '이력을 남겼습니다. 이 항목을 등록할 때 함께 저장됩니다.');
   } catch (error) {
     toastError('저장 실패', error);

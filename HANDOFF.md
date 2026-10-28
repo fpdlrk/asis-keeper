@@ -436,6 +436,57 @@ grep -rn "지운이름" js/ index.html
 - 정의서는 지금 고치는 쪽만 그림. 원본은 `app.screen.asisDefItems[탭]`
 - 단계 안내 띠는 탭 위(`.phase`, `phaseBannerHtml`) — 모든 탭에서 보임
 
+### ㉟ 오른쪽 영역 없앰 — 화면 이력은 [이력] 창, 메모는 '요약·첨부' 탭
+
+**배경(사용자 요청 · 상의)**: 이력은 본문 항목마다 있고, 메모도 이력과 비슷해 보여 오른쪽 영역을 없애고 싶음.
+다만 화면 이력(상태 변경 · 항목 삭제 · 잠금)과 메모(보고서의 '변경 내용 요약')는 항목 이력으로 대신할 수 없어 **옮기기로** 결정.
+- `#rside` · `sidePanelHtml` · `#app.has-screen`(3단 그리드) · `.rside/.rs-*` CSS 삭제 → 본문이 넓어짐
+- 화면 이력: 상태 선택 옆 **[이력]**(`#btnScreenLog`) → `#screenLogModal` 창(`openScreenLog` · 등록/상태 변경 때 `refreshScreenLog`). 내용은 그대로 `screenLogHtml`
+- 메모: '첨부' 탭 → **'요약·첨부'** 탭 맨 위 '변경 요약'(편집기 id 는 그대로 `memo`, 등록 영역도 그대로 `common` — 저장 바 이름 '작업 정보 · 변경 요약').
+  탭의 ● · ✓ 는 첨부와 변경 요약을 함께 봄(`refreshIndicators`)
+
+### ㉞ 서비스 유형(조회/저장) · 프로젝트 공통 ENTITY
+
+**배경(사용자 요청 · 상의)**: 저장 서비스는 ENTITY 를 가짐. ENTITY 는 **여러 서비스(여러 화면)가 함께 쓰고**, 서비스 하나가 **여러 ENTITY** 를 씀.
+등록 누락이 걱정 → 서비스 추가 때 유형을 꼭 고르게 하고, ENTITY 는 루트에 한 벌 + 화면마다 ENTITY 탭으로 보기, 잠금은 ENTITY 마다로 결정.
+ENTITY 정의 칸 항목은 사용자가 나중에 줌 → 지금은 **임시안**(엔티티명 · 테이블명 · 비고, 표 없음 — `ENTITY_DEF`)
+
+- 서비스: 정의 칸 맨 앞 `serviceType`(조회/저장 select), 추가 창에서 꼭 고름(설정 `addChoice` — `askNewDefItem`이 `#daChoiceRow` 라디오로 그림, ENTITY 도 같은 방식)
+  - 저장이면 본문에 '사용 ENTITY'(`entityLinksHtml`), 항목 필드 `entityIds`(normalize · stored · readDefInputs · defSignature · diffDefItem(`linksAdded/Removed`) · 변경 이력 'ENTITY 연결: +A, -B')
+  - 빠뜨림 방지: 탭 ⚠(`markPillTabWarning` · `serviceNeedsEntity`), **등록 불가**(`blockServicesWithoutEntity` — `saveDirtySections` · 서비스 탭 `lockTab`에서 막고 그 서비스로 이동. 처음엔 '그래도 등록' 확인이었다가 사용자 요청으로 필수로 바꿈), 유형을 저장→다른 것으로 바꾸면 연결 풀지 확인(`handleServiceTypeChange`)
+  - 신규 단계 표시: 새로 연결한 ENTITY 초록, 원본에서 빠진 ENTITY 따로 표시(`applyEntityLinkMarks`)
+- ENTITY: 새 파일 `entity-data.js`(데이터) · `screen-entity.js`(탭) · `screen-entity-links.js`(서비스 쪽)
+  - 보관 `ENTITY_FILE` = `.entity/entities.json` (루트, '.' 폴더라 트리에 안 나옴). 화면을 열 때마다 새로 읽음, 저장 바 영역 `entity`
+  - ENTITY = `{id, asis, tobe, locked, savedAt, hash, unlockLog, log}`. 고치는 쪽 `entityLayerOf`: 잠김→tobe, 원본 있음→asis, 원본 없음→tobe
+  - 잠그기 `lockEntity`(처음이면 원본→신규 복사, 해시), 풀기 `unlockEntity`(사유). 둘 다 먼저 등록하고 ENTITY 탭만 다시 그림(`rerenderEntityPanel`)
+  - 삭제는 쓰는 서비스가 있으면 막음(이 화면은 화면 값, 다른 화면은 `findEntityUsages` — 등록된 내용 · 서비스 탭에서 고치는 쪽 기준)
+  - 정의서 그리기 · 비교 · 이력 함수를 재사용하려고 설정 찾기를 `defConfigOf(tab)`로 모음('entity' → `ENTITY_DEF`), 항목 요소 읽기 `readDefItemElement` 분리
+  - 보고서: 서비스에 '사용 ENTITY' 이름, 화면마다 '사용 ENTITY (프로젝트 공통)' 영역(`entitySectionHtml`, `app.entityCache`)
+- 고침: ENTITY 탭 기본 보기를 [전체]로 — 처음이 [이 화면에서 쓰는 것]이라, 서비스에 연결하기 전인 ENTITY 가 새로고침 뒤 안 보여 '등록이 안 된 것처럼' 보였음(데이터는 저장돼 있었음)
+- 고침: [+ ENTITY 연결]이 메뉴를 열자마자 닫혔음 → 단추에 `data-menu` 를 붙임(메뉴를 여는 단추는 꼭 `data-menu` — dialog.js 의 바깥 클릭 닫기 예외)
+- 정의 칸 확정(2026-10-28): 엔터티명 · 화면표시명 · 이력관리 유형 코드 · 단위업무코드 · 작성자 유형 · 로그사용여부 (모두 글 입력칸. key `entityName` `displayName` `historyTypeCode` `unitWorkCode` `writerType` `logYn`).
+  임시안의 테이블명 · 비고는 뺌(넣어 둔 값은 다음 등록 때 빠짐)
+  → 이어서 **엔터티명도 뺌** — 블록 위 이름칸(제목)이 엔터티명 (넣어 둔 entityName 값은 다음 등록 때 빠짐)
+- 남은 일: ENTITY 에 표(속성 목록 등)가 필요한지 사용자 확인 중 → 필요하면 `ENTITY_DEF.grids` + `GRID_COLUMNS['entity.<키>']`
+
+### ㉝ 이력 고도화 — 시스템 / 사용자 구분, 생성 · 수정 자동 기록
+
+**배경(사용자 요청)**: 새로 만들면 '신규 생성', 고치면 무엇이 바뀌었는지 추적되는 이력이 자동으로 쌓이고, 직접 입력한 이력과 구분되게. 권장안으로 결정:
+등록할 때 기록 · 이전 → 이후 값까지 · 삭제는 화면 단위 이력에.
+- 이력 한 줄 `{at, by, text, source}` — `source`: `'user'`(이력 저장) · `'system'`(자동). 없으면 사용자(`logSourceOf`)
+- 새 파일 `js/change-log.js`(글 만들기): `creationLogText` · `defChangeLogText`(정의서 — `diffDefItem` 재사용) · `sqlChangeLogText`(SQL — 줄 비교 `findChangedLineNumbers` + `diffSqlDefinition`) ·
+  `infoChangeText` · `gridChangeText` · `appendSystemLog` · `addActivityLog` · `systemLogEntry`. 한 부분에 이전 → 이후 값 `MAX_LOG_DETAILS`(3)개까지, 값은 `MAX_LOG_VALUE_LENGTH`(40)자까지
+- 기록하는 곳
+  - SQL: `saveAsisBlocks` · `saveTobeBlocks` → `logSqlBlockChange`(비교 기준 = `savedBlockOrder`를 푼 `savedSqlStatesOf` + `savedValues`의 이전 SQL)
+  - 정의서: `saveDefItems` (비교 기준 = `savedDefItems`)
+  - 잠글 때 신규로 복사된 항목: '원본에서 복사'(`copyNewOriginalsToTobe`) / 되살린 항목: 첫 등록 때 '원본에서 되살림'(항목의 `createdNote` — 파일에는 저장 안 함)
+  - 화면 이력 `meta.activityLog`: 항목 삭제(등록할 때, 등록 전에 지운 것은 제외) · 원본 잠금/다시 잠금 · 잠금 풀기(사유 포함)
+- 화면: 이력마다 [시스템]/[사용자] 꼬리표(`logSourceTagHtml`, 색 토큰 `--log-user*` `--log-system*`), [전체 · 사용자 · 시스템] 거르기(`filterItemLog`),
+  등록 뒤 이력 목록을 다시 그림(`renderItemLog`). 오른쪽 '상태 이력' → **'화면 이력'**(`screenLogHtml` — 상태 변경 + activityLog 를 시간순, 예전 `statusLogHtml` 대체)
+- 메뉴 복사(작업 기록 초기화)는 `activityLog`도 지움
+
+### ㉜ 공통코드관리 탭의 '공통코드' 표 제목 → '공통코드관리' (키는 그대로 `common`)
+
 ### ㉛ 등록할 때 표의 빈 줄 정리
 
 - 저장 데이터에는 원래부터 빈 줄이 빠짐(`readGridOf` — 모든 칸이 비었거나 기본값인 줄 제외). 등록 뒤에도 화면에 빈 줄이 남아 '같이 저장된 것처럼' 보였음
@@ -458,7 +509,7 @@ grep -rn "지운이름" js/ index.html
 
 ### ㉙ 탭의 '신규' 글자 → 빨간 동그라미 N
 
-- 신규 단계에서 원본이 없는 항목(SQL · 정의서 [+ 추가]로 만든 것)의 탭 표시를 글자 '신규' 대신 **빨간 배경(`--new-badge-bg`) 흰 'N'**(`NEW_BADGE_TEXT`, 마우스를 올리면 '신규 (원본 없음)') — 이름 **앞**에 (CSS `order: -1`)
+- 신규 단계에서 원본이 없는 항목(SQL · 정의서 [+ 추가]로 만든 것)의 탭 표시를 글자 '신규' 대신 **빨간 배경(`--new-badge-bg`) 흰 'N'**(`NEW_BADGE_TEXT`, 마우스를 올리면 '신규 (원본 없음)') — 탭 **왼쪽 위 가장자리에 겹쳐**(absolute, 14px) 탭 높이가 다른 탭과 같게. 잘리지 않게 `.sqltabs-list` 위 · 왼쪽 여백을 늘림
 - '변경' · '삭제됨' 글자와 탭 줄 오른쪽 요약(`신규 n`)은 그대로
 
 ### ㉘ '비교' 탭 → 상단 [소스 비교] 창 (아무 두 소스를 비교)
@@ -670,6 +721,19 @@ grep -rn "지운이름" js/ index.html
 ---
 
 ## 5. 확인이 필요한 것 (브라우저에서 직접)
+
+### 서비스 유형 · ENTITY (㉞) — 아직 확인 안 함
+
+- [ ] 서비스 추가 창에서 유형을 안 고르면 안내, 저장이면 '사용 ENTITY' 영역, 유형을 조회로 바꾸면 연결 풀지 확인
+- [ ] [+ ENTITY 연결] 고르기 · 새 ENTITY 만들기(서비스 화면에 머묾), 이름표 → ENTITY 탭, ×, 저장 서비스에 연결 없으면 탭 ⚠ · 등록 때 확인
+- [ ] ENTITY 탭: 보기 [이 화면에서 쓰는 것 / 전체], 기존 ENTITY 원본 잠그기 → 신규 고치면 표시, 잠금 풀기, 원본 없는 새 ENTITY 의 N, [사용하는 서비스] → 다른 화면으로 이동
+- [ ] 다른 화면에서 같은 ENTITY 가 보이는지(고친 내용 반영), 쓰는 서비스가 있으면 삭제 막힘, 보고서의 사용 ENTITY
+
+### 이력 고도화 (㉝) — 아직 확인 안 함
+
+- [ ] 새 항목 등록 → 이력에 [시스템] 신규 생성(원본 단계면 원본 등록), 다시 고쳐 등록 → '수정 · …'에 이전 → 이후 값, 안 바꾸고 등록 → 이력 안 생김
+- [ ] [이력 저장] → [사용자], 거르기 [전체 · 사용자 · 시스템]
+- [ ] 항목 삭제 후 등록 → 오른쪽 '화면 이력'에 삭제 기록, 원본 잠그기 · 잠금 풀기 기록, 잠글 때 복사된 항목의 '원본에서 복사', 되살린 항목의 '원본에서 되살림'
 
 ### 자잘한 요청 (㉖) — 아직 확인 안 함
 

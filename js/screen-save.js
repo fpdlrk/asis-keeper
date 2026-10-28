@@ -32,19 +32,42 @@ async function savePendingFiles(kind) {
   renderFileList(kind);
 }
 
+/**
+ * 마지막 등록 때의 SQL 블록 상태 (savedBlockOrder 를 풀어 놓은 것) — 시스템 이력에 '무엇이 바뀌었는지' 적을 때 비교 기준
+ * @returns {Map<string, {title, asisId, definition}>} 블록 id → 상태 (없으면 아직 등록 전인 블록)
+ */
+const savedSqlStatesOf = kind => new Map(JSON.parse(app.screen.savedBlockOrder[kind] || '[]')
+  .map(([id, title, asisId, definition]) => [id, {title, asisId, definition}]));
+
+/**
+ * SQL 블록 하나의 시스템 이력: 처음 등록이면 생성, 아니면 바뀐 것 (change-log.js)
+ * savedValues 를 새 값으로 바꾸기 전에 불러야 함 (이전 SQL 을 거기서 읽음)
+ */
+function logSqlBlockChange(kind, block, input, savedStates) {
+  const previous = savedStates.get(block.id);
+  if (!previous) return appendSystemLog(block, creationLogText(block, kind));
+  const current = {title: input.element.querySelector('.bt').value.trim(), asisId: block.asisId ?? null, definition: readSqlDefinition(kind, input.element), sql: input.sql};
+  appendSystemLog(block, sqlChangeLogText({...previous, sql: app.screen.savedValues[editorId(kind, block.id)] || ''}, current));
+}
+
 /** 원본 SQL 블록 저장 (원본 단계의 [등록] · 잠그기). 지운 블록의 파일도 지움 */
 async function saveAsisBlocks() {
   const screen = app.screen;
+  const savedStates = savedSqlStatesOf('asis');
   const blockList = [];
   for (const input of readBlockInputs('asis')) {
     const block = findSqlBlock('asis', input.id);
+    logSqlBlockChange('asis', block, input, savedStates);
     await writeFile(screen.dir, block.file, input.sql);
     block.title = input.title;
     Object.assign(block, readSqlDefinition('asis', input.element));
     blockList.push({id: block.id, title: block.title, file: block.file, ...sqlDefinitionOf(block), ...blockLogOf(block)});
     screen.savedValues[editorId('asis', block.id)] = input.sql;
   }
-  for (const block of screen.removedAsisBlocks) await removeFileQuietly(screen.dir, block.file);
+  for (const block of screen.removedAsisBlocks) {
+    await removeFileQuietly(screen.dir, block.file);
+    addActivityLog(screen.meta, `원본 SQL ‘${block.title}’ 삭제`);
+  }
   screen.removedAsisBlocks = [];
   screen.meta.sqlBlocks = {...(screen.meta.sqlBlocks || {}), asis: blockList};
   await saveMeta();
@@ -54,6 +77,7 @@ async function saveAsisBlocks() {
 /** 신규 SQL 블록 저장 — 덮어쓰기 전 내용은 tobe/history 에 남김. 삭제한 블록의 파일도 지움 */
 async function saveTobeBlocks() {
   const screen = app.screen;
+  const savedStates = savedSqlStatesOf('tobe');
   const blockList = [];
   const asisBlocks = readBlockInputs('asis');
   const tobeInputs = readBlockInputs('tobe');
@@ -64,6 +88,7 @@ async function saveTobeBlocks() {
       const paired = findPairedAsisBlock(input, order, asisBlocks);
       block.asisId = paired ? paired.id : NO_ASIS_PAIR;
     }
+    logSqlBlockChange('tobe', block, input, savedStates);
     const parts = [[editorId('tobe', block.id), block.file, 'sql'], [editorId('rollback', block.id), block.rb, 'rollback']]
       .filter(([id]) => screen.editors[id]);   // 롤백은 칸이 있을 때만
     for (const [id, filePath, historyTag] of parts) {
@@ -82,6 +107,7 @@ async function saveTobeBlocks() {
   for (const block of screen.removedTobeBlocks) {
     await removeFileQuietly(screen.dir, block.file);
     if (block.rb) await removeFileQuietly(screen.dir, block.rb);
+    if (savedStates.has(block.id)) addActivityLog(screen.meta, `신규 SQL ‘${block.title}’ 삭제`);   // 등록 전에 지운 것은 남기지 않음
   }
   screen.removedTobeBlocks = [];
   screen.meta.sqlBlocks = {...(screen.meta.sqlBlocks || {}), tobe: blockList};
@@ -91,11 +117,19 @@ async function saveTobeBlocks() {
   screen.hasSavedTobe = hasSavedTobeSql();
 }
 
-/** 영역 하나 등록 — SQL · 정의서는 지금 고치는 쪽(원본/신규)에 저장. 등록한 뒤 그 영역 표의 빈 줄은 화면에서도 지움 */
+/**
+ * 영역 하나 등록 — SQL · 정의서는 지금 고치는 쪽(원본/신규)에 저장
+ * 등록한 뒤: 그 영역 표의 빈 줄을 화면에서도 지우고, 새로 쌓인 시스템 이력을 화면에 다시 그림
+ */
 async function saveSection(section) {
+  const screen = app.screen;
   await saveSectionData(section);
-  const container = section === 'sql' ? $('#blocks-' + layerOf('sql')) : (section in DEF_TABS ? $('#defs-' + section) : null);
+  const container = section === 'sql' ? $('#blocks-' + layerOf('sql')) : (section in DEF_TABS || section === 'entity' ? $('#defs-' + section) : null);
   if (container) container.querySelectorAll('table.grid').forEach(removeEmptyGridRows);
+  if (section === 'sql') screen.blocks[layerOf('sql')].forEach(block => renderItemLog('sql', layerOf('sql'), block));
+  if (section in DEF_TABS) screen.defItems[section].forEach(item => renderItemLog('def', section, item));
+  if (section === 'entity') screen.entities.forEach(record => renderItemLog('entity', 'entity', record));
+  refreshScreenLog();
 }
 
 /** 영역 하나의 데이터 저장 (saveSection 이 부름) */
@@ -116,6 +150,8 @@ async function saveSectionData(section) {
     for (const field of COMMON_FIELDS) screen.meta[field] = $('#' + field).value.trim();
     await saveTextField('memo');
     await saveMeta();
+  } else if (section === 'entity') {
+    await saveEntityTab();   // 프로젝트 공통 ENTITY (screen-entity.js)
   } else {
     await saveDefItems(section);   // 서비스 · 오브젝트 · 공통코드관리 (screen-defs.js)
   }
@@ -134,6 +170,8 @@ const pendingPathError = () => validatePendingPaths(layerOf('sql')) || validateP
  * @returns {Promise<boolean>} 다 등록했으면 true
  */
 async function saveDirtySections() {
+  // 저장 서비스는 ENTITY 가 꼭 있어야 등록됨 (빠뜨리지 않게 — screen-entity-links.js)
+  if (isDirty('service') && await blockServicesWithoutEntity()) return false;
   const pathError = pendingPathError();
   if (pathError) {
     showTab(validatePendingPaths('attach') ? 'attach' : 'sql');
@@ -183,7 +221,7 @@ async function changeStatus(statusIndex) {
       await saveMeta();
       $('#stSel').className = 'stpill s' + statusIndex;
       renderMiniBar();
-      $('#stlog').innerHTML = statusLogHtml(screen.meta);
+      refreshScreenLog();
       await renderTree();
     });
     toast('상태: ' + statusName);
@@ -195,7 +233,7 @@ async function changeStatus(statusIndex) {
 /* ======================= 이벤트 연결 ======================= */
 
 /**
- * 화면 안 버튼 클릭 처리 (본문 #main 과 오른쪽 #rside 에 함께 연결)
+ * 화면 안 버튼 클릭 처리 (본문 #main 에 연결)
  * 버튼은 화면을 열 때마다 새로 그려지므로, 바깥 요소 하나에서 data-* 속성으로 구분해 처리합니다.
  */
 function handleScreenClick(e) {
@@ -205,6 +243,7 @@ function handleScreenClick(e) {
 
   if (button.id === 'btnSaveAll') saveAllChanges();
   else if (button.id === 'btnDiscard') discardChanges();
+  else if (button.id === 'btnScreenLog') openScreenLog();          // 상태 옆 [이력] → 화면 이력 창
   else if (data.lockTab) lockTab(data.lockTab);                  // 탭 위 [원본 등록 후 잠그기]
   else if (data.unlockTab) unlockTab(data.unlockTab);            // 탭 위 [잠금 풀기]
   else if (data.add) addGridRow(data.add);                       // 표 [+ 행 추가]
@@ -222,6 +261,15 @@ function handleScreenClick(e) {
   else if (data.reviveDef) reviveDefItem(data.reviveDef, data.bid); // 삭제된 원본 정의서 항목 [되살리기]
   else if (data.reviveRow) reviveGridRow(data.reviveRow, data.rid); // 삭제된 줄 [되살리기]
   else if (data.logSave) saveItemLog(data.logScope, data.kind, data.logSave);   // 항목 이력 [이력 저장]
+  else if (data.logFilter) filterItemLog(button);                   // 항목 이력 [전체 · 사용자 · 시스템]
+  else if (data.linkEntity) showEntityLinkMenu(button, data.linkEntity);         // 서비스 [+ ENTITY 연결]
+  else if (data.unlinkEntity) unlinkEntity(data.bid, data.unlinkEntity);         // 서비스 ENTITY 이름표 ×
+  else if (data.gotoEntity) goToEntity(data.gotoEntity);                        // 서비스 ENTITY 이름표 → ENTITY 탭
+  else if (data.entityFilter) setEntityFilter(data.entityFilter);               // ENTITY 탭 보기
+  else if (data.entityLock) lockEntity(data.entityLock);                        // ENTITY [원본 등록 후 잠그기]
+  else if (data.entityUnlock) unlockEntity(data.entityUnlock);                  // ENTITY [잠금 풀기]
+  else if (data.entityUsage) showEntityUsages(data.entityUsage);                // ENTITY [사용하는 서비스]
+  else if (data.openService) openServiceItem(JSON.parse(data.openService), data.bid);   // 사용 목록의 서비스 → 그 화면
   else if (data.hist) loadHistoryVersion(data.hist);             // 변경 이력 [편집기로 불러오기]
   else if (data.pickdir) pickFolderFiles(data.pickdir);          // [폴더 선택]
   else if (data.menu === 'tobe') {
@@ -245,11 +293,12 @@ function handleSaveShortcut(e) {
 }
 
 function initScreen() {
-  const main = $('#main'), sidePanel = $('#rside');
+  const main = $('#main');
   main.addEventListener('click', handleScreenClick);
-  sidePanel.addEventListener('click', handleScreenClick);
+  $('#slClose').onclick = () => { $('#screenLogModal').hidden = true; };
   main.addEventListener('change', e => {
     if (e.target.id === 'stSel') changeStatus(Number(e.target.value));
+    else if (e.target.dataset.info === 'serviceType' && e.target.closest('#defs-service')) handleServiceTypeChange(e.target);   // 저장 서비스면 ENTITY 영역
   });
   // 무엇이든 입력하면 탭 표시·저장 바 갱신. SQL 블록 제목은 입력하는 대로 대문자로 고침
   main.addEventListener('input', e => {
@@ -257,7 +306,6 @@ function initScreen() {
     if (e.target.classList.contains('bt') && !e.target.classList.contains('def-title')) forceUpperCaseTitle(e.target);
     refreshIndicators();
   });
-  sidePanel.addEventListener('input', refreshIndicators);
   // 블록 제목칸: 더블클릭 = 고치기 시작, Enter/Esc/다른 곳 클릭 = 마침 (screen-blocks.js)
   main.addEventListener('dblclick', e => {
     if (e.target.classList && e.target.classList.contains('bt')) startTitleEdit(e.target);

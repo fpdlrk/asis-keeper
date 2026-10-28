@@ -56,7 +56,6 @@
   </aside>
 
   <main id="main"></main>
-  <aside class="rside" id="rside" hidden aria-label="메모와 첨부"></aside>
 </div>
 
 <div id="toast" role="status" aria-live="polite"></div>
@@ -111,6 +110,14 @@
   <div class="mbar"><button type="button" class="btn btn-s" id="dfClose">닫기</button></div>
 </div></div>
 
+<!-- 화면 이력 창 (화면 위 상태 옆 [이력]): 상태 변경 · 항목 삭제 · 잠금 기록 (js/screen.js openScreenLog) -->
+<div id="screenLogModal" class="overlay" hidden><div class="mbox mid" role="dialog" aria-labelledby="slTitle">
+  <h3 id="slTitle">화면 이력</h3>
+  <p class="hint">상태 변경과 항목 삭제 · 원본 잠금 · 잠금 풀기가 자동으로 기록됩니다. 항목마다의 이력은 각 항목 아래에 있습니다.</p>
+  <ul class="stlog sl-list" id="stlog"></ul>
+  <div class="mbar"><button type="button" class="btn btn-s" id="slClose">닫기</button></div>
+</div></div>
+
 <!-- 소스 비교 창 (상단 [소스 비교]): 아무 두 소스를 넣어 비교 (js/source-diff.js) -->
 <div id="srcDiffModal" class="overlay" hidden><div class="mbox wide sdbox" role="dialog" aria-labelledby="sdTitle">
   <h3 id="sdTitle">소스 비교</h3>
@@ -132,6 +139,7 @@
   <p class="hint">이름은 꼭 입력해 주세요. 표는 추가한 뒤 탭 본문에서 채우고, 아래 저장 바의 [등록]을 눌러야 저장됩니다.</p>
   <label class="f" for="daName">이름 <em class="req">*</em></label>
   <input type="text" id="daName" class="inp" autocomplete="off" placeholder="예: 사원조회 서비스">
+  <div id="daChoiceRow" hidden><span class="f" id="daChoiceLabel"></span><div class="radio-row" id="daChoices" role="radiogroup"></div></div>
   <label class="f" for="daLog">이력 <span class="muted">(선택)</span></label>
   <textarea id="daLog" class="inp sa-log" rows="3" placeholder="예: 최초 작성 (티켓 A-123)"></textarea>
   <p class="err" id="daErr" hidden></p>
@@ -164,6 +172,8 @@
 <script src="js/fs.js"></script>
 <script src="js/screen-data.js"></script>
 <script src="js/layer-diff.js"></script>
+<script src="js/entity-data.js"></script>
+<script src="js/change-log.js"></script>
 <script src="js/sql.js"></script>
 <script src="js/sql-complete.js"></script>
 <script src="js/dialog.js"></script>
@@ -178,6 +188,8 @@
 <script src="js/screen-defs.js"></script>
 <script src="js/screen-changes.js"></script>
 <script src="js/screen-lock.js"></script>
+<script src="js/screen-entity.js"></script>
+<script src="js/screen-entity-links.js"></script>
 <script src="js/screen-grid.js"></script>
 <script src="js/screen-files.js"></script>
 <script src="js/screen-save.js"></script>

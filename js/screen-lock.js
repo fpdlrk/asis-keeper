@@ -40,8 +40,10 @@ function phaseBannerHtml(meta, tab) {
 }
 
 /** 잠금 해제 이력 띠 — 그 탭의 잠금을 푼 적이 없으면 아무것도 그리지 않습니다 (해제 중·다시 잠근 뒤 모두 남음) */
-function unlockLogBannerHtml(meta, tab) {
-  const entries = tabLocksOf(meta)[tab].unlockLog;
+const unlockLogBannerHtml = (meta, tab) => unlockEntriesHtml(tabLocksOf(meta)[tab].unlockLog);
+
+/** 잠금 해제 이력 띠 (탭 · ENTITY 가 함께 씀) — 이력이 없으면 '' */
+function unlockEntriesHtml(entries) {
   if (!entries.length) return '';
   const items = entries.map(entry => `<li>${escapeHtml(formatDateTime(entry.at))}`
     + `<span class="sep">·</span>${escapeHtml(entry.by || '-')}`
@@ -96,7 +98,8 @@ async function copyNewOriginalsToTobe(dir, meta, tab, lock) {
   if (tab !== 'sql') {
     const {asis, tobe} = await loadDefLayers(dir, tab, false);   // 신규 파일이 없으면 빈 목록
     const pointed = new Set(tobe.map(item => item.asisId).filter(Boolean));
-    const copies = asis.filter(item => !pointed.has(item.id) && !lockedBefore.has(item.id)).map(copyDefItemAsTobe);
+    const copies = asis.filter(item => !pointed.has(item.id) && !lockedBefore.has(item.id))
+      .map(item => ({...copyDefItemAsTobe(item), log: [...(item.log || []), systemLogEntry('원본에서 복사')]}));
     await writeJson(dir, defLayerFile(tab, 'tobe'), [...tobe, ...copies].map(storedDefItem));
     return;
   }
@@ -109,7 +112,7 @@ async function copyNewOriginalsToTobe(dir, meta, tab, lock) {
     const id = newBlockId();
     const file = `tobe/sql/${id}.sql`;
     await writeFile(dir, file, (await readText(dir, block.file)) || '');
-    tobeList.push({id, title: block.title, file, asisId: block.id, ...sqlDefinitionOf(block), ...blockLogOf(block)});
+    tobeList.push({id, title: block.title, file, asisId: block.id, ...sqlDefinitionOf(block), log: [...(block.log || []), systemLogEntry('원본에서 복사')]});
   }
   meta.sqlBlocks = {...(meta.sqlBlocks || {}), tobe: tobeList};
 }
@@ -159,6 +162,8 @@ async function lockTab(tab) {
   if (!hasOriginalContent(tab)) return toast(`잠글 ${label} 원본이 없습니다. 먼저 원본을 넣어 주세요.`);
   const pathError = pendingPathError();
   if (pathError) return toast(pathError);
+  // 잠글 때도 등록이 일어나므로 저장 서비스의 ENTITY 필수를 지킴 (서비스 탭은 바뀌지 않았어도 다시 저장함)
+  if ((tab === 'service' || isDirty('service')) && await blockServicesWithoutEntity()) return;
   const ok = await askConfirm({
     title: `${label} ${reopened ? '고친 원본 다시 잠그기' : '원본 등록 후 잠그기'}`,
     desc: (reopened
@@ -185,6 +190,7 @@ async function lockTab(tab) {
         hashes: await hashOriginalOf(dir, meta, tab, screen.savedFiles.asis),
         unlockLog: closeLastUnlockEntry(lock.unlockLog)
       });
+      addActivityLog(meta, `${label} 원본 ${reopened ? '다시 ' : ''}잠금`);
       await saveMeta();
     });
   } catch (error) {
@@ -237,6 +243,7 @@ async function unlockTab(tab) {
         locked: false,
         unlockLog: [...lock.unlockLog, {at: new Date().toISOString(), by: currentWorkerName(), reason: answer.value, relockedAt: ''}]
       });
+      addActivityLog(screen.meta, `${label} 잠금 풀기 (사유: ${answer.value})`);
       await saveMeta();
     });
   } catch (error) {

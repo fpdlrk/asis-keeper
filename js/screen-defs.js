@@ -35,11 +35,13 @@ const findDefItem = (tab, itemId) => (app.screen.defItems[tab] || []).find(item 
  * @param {string} [opt.idBase] 표 id 에 쓸 항목 id (기본은 item.id)
  */
 function defItemBodyHtml(tab, item, {readOnly = false, idBase = item.id} = {}) {
-  const infoFields = DEF_TABS[tab].info;
-  const grids = DEF_TABS[tab].grids
+  const config = defConfigOf(tab);
+  const grids = config.grids
     .map(([key, label]) => gridHtml(defGridTableId(tab, idBase, key), `${tab}.${key}`, gridValueOf(item, key), label, readOnly))
     .join('');
-  return (infoFields ? infoFieldsHtml(infoFields, item.info, readOnly) : '') + `<div class="def-grids">${grids}</div>`;
+  return (config.info ? infoFieldsHtml(config.info, item.info, readOnly) : '')
+    + (config.entityLinks ? entityLinksHtml(item, readOnly) : '')   // 저장 서비스의 ENTITY 연결 (screen-entity-links.js)
+    + (grids ? `<div class="def-grids">${grids}</div>` : '');
 }
 
 /** 항목 하나 (고치는 쪽): 이름 + 본문 + 이력 */
@@ -65,21 +67,27 @@ function readDefInputs(tab) {
   return $$(`#defs-${tab} > .blk`).map(element => {
     const itemId = element.dataset.id;
     const item = findDefItem(tab, itemId) || {};
-    const grids = {}, rowIds = {};
-    for (const [key] of DEF_TABS[tab].grids) {
-      const grid = readGridOf(document.getElementById(defGridTableId(tab, itemId, key)));
-      grids[key] = grid.rows;
-      rowIds[key] = grid.ids;
-    }
     return {
       id: itemId,
       ...(item.asisId !== undefined ? {asisId: item.asisId} : {}),
-      title: element.querySelector('.def-title').value.trim(),
-      info: readInfoFields(element),
-      grids,
-      rowIds
+      ...readDefItemElement(tab, element, itemId),
+      ...(defConfigOf(tab).entityLinks ? {entityIds: [...(item.entityIds || [])]} : {})   // 연결은 화면이 아니라 항목 정보에 있음
     };
   });
+}
+
+/**
+ * 항목 요소 하나의 지금 값 {title, info, grids, rowIds} (빈 칸 · 빈 줄 제외) — 정의서 항목 · ENTITY 가 함께 씀
+ * @param {string} idBase 표 id 에 쓴 항목 id (defGridTableId)
+ */
+function readDefItemElement(tab, element, idBase) {
+  const grids = {}, rowIds = {};
+  for (const [key] of defConfigOf(tab).grids) {
+    const grid = readGridOf(document.getElementById(defGridTableId(tab, idBase, key)));
+    grids[key] = grid.rows;
+    rowIds[key] = grid.ids;
+  }
+  return {title: element.querySelector('.def-title').value.trim(), info: readInfoFields(element), grids, rowIds};
 }
 
 /**
@@ -87,15 +95,17 @@ function readDefInputs(tab) {
  * 칸 수를 열 수에 맞추고 앞뒤 공백·빈 줄을 정리해 비교합니다 — 예전 파일에서 옮긴 값처럼 칸 수가 다른 줄도 같은 값이면 같다고 보기 위해서
  */
 function defSignature(tab, item) {
-  const grids = DEF_TABS[tab].grids.map(([key]) => {
+  const config = defConfigOf(tab);
+  const grids = config.grids.map(([key]) => {
     const columnCount = GRID_COLUMNS[`${tab}.${key}`].cols.length;
     const {rows, ids} = gridValueOf(item, key);
     return rows
       .map((cells, i) => [ids[i], ...Array.from({length: columnCount}, (_, col) => comparableValue(cells[col]))])
       .filter(([, ...cells]) => cells.some(Boolean));
   });
-  const info = (DEF_TABS[tab].info || []).map(({key}) => comparableValue((item.info || {})[key]));
-  return JSON.stringify([item.id, item.asisId ?? null, item.title, info, grids]);
+  const info = (config.info || []).map(({key}) => comparableValue((item.info || {})[key]));
+  const links = [...(item.entityIds || [])].sort();
+  return JSON.stringify([item.id, item.asisId ?? null, item.title, info, grids, links]);
 }
 
 /** 정의서 탭에 등록하지 않은 변경이 있는지 (항목 추가·삭제·순서 · 이름 · 정의 칸 · 표) */
@@ -115,6 +125,7 @@ function refreshDefTabMarks(tab) {
     const state = isTabLocked(tab) ? defItemStateOf(tab, item) : '';
     states.push(state);
     markPillTab(tab, item.id, item.title || UNNAMED_DEF_TITLE, savedById.get(item.id) !== defSignature(tab, item), state);
+    if (defConfigOf(tab).entityLinks) markPillTabWarning(tab, item.id, serviceNeedsEntity(item) ? '저장 서비스인데 연결된 ENTITY 가 없습니다' : '');
   }
   if (isTabLocked(tab)) renderTabStateSummary(tab, [...states, ...goneDefItems(tab).map(() => 'gone')]);
 }
@@ -165,16 +176,25 @@ function activateDefTab(tab, itemId) {
 /* ======================= 추가 · 삭제 ======================= */
 
 /**
- * 항목 추가 창 (#defAddModal): 이름(필수) · 이력(선택)
- * @returns {Promise<{title: string, logText: string} | null>} 취소하면 null
+ * 항목 추가 창 (#defAddModal): 이름(필수) · 꼭 고르는 것(설정의 addChoice — 예: 서비스 유형, ENTITY 구분) · 이력(선택)
+ * @returns {Promise<{title: string, choice: string, logText: string} | null>} 취소하면 null. choice 는 addChoice 가 없으면 ''
  */
 function askNewDefItem(tab) {
   return new Promise(resolve => {
     const modal = $('#defAddModal'), nameInput = $('#daName'), logInput = $('#daLog'), error = $('#daErr');
-    $('#daTitle').textContent = `${LAYER_LABELS[layerOf(tab)]} ${DEF_TABS[tab].label} 추가`;
+    const config = defConfigOf(tab);
+    const choice = config.addChoice;
+    $('#daTitle').textContent = tab === 'entity' ? 'ENTITY 추가' : `${LAYER_LABELS[layerOf(tab)]} ${config.label} 추가`;
     nameInput.value = '';
     logInput.value = '';
     error.hidden = true;
+    // 꼭 고르는 것: 기본값 없이 보여 주어 직접 고르게 함 (예: 저장 서비스를 빠뜨리지 않게)
+    $('#daChoiceRow').hidden = !choice;
+    if (choice) {
+      $('#daChoiceLabel').innerHTML = `${escapeHtml(choice.label)} <em class="req">*</em>`;
+      $('#daChoices').innerHTML = choice.options.map(([value, label]) =>
+        `<label class="radio"><input type="radio" name="daChoice" value="${escapeHtml(value)}"><span>${escapeHtml(label)}</span></label>`).join('');
+    }
 
     const finish = result => {
       modal.hidden = true;
@@ -184,13 +204,15 @@ function askNewDefItem(tab) {
     };
     const submit = () => {
       const title = nameInput.value.trim();
-      if (!title) {
-        error.textContent = '이름을 입력해 주세요.';
+      const picked = $('#daChoices input:checked');
+      const showError = (message, target) => {
+        error.textContent = message;
         error.hidden = false;
-        nameInput.focus();
-        return;
-      }
-      finish({title, logText: logInput.value.trim()});
+        target.focus();
+      };
+      if (!title) return showError('이름을 입력해 주세요.', nameInput);
+      if (choice && !picked) return showError(`${choice.label}을(를) 골라 주세요.`, $('#daChoices input'));
+      finish({title, choice: picked ? picked.value : '', logText: logInput.value.trim()});
     };
 
     $('#daOk').onclick = submit;
@@ -223,15 +245,16 @@ function insertDefItem(tab, item) {
 async function addDefItem(tab) {
   const answer = await askNewDefItem(tab);
   if (!answer) return;
-  const log = answer.logText ? [{at: new Date().toISOString(), by: currentWorkerName(), text: answer.logText}] : [];
+  const choice = defConfigOf(tab).addChoice;
   const item = {
     id: newId('d'),
     ...(isTabLocked(tab) ? {asisId: NO_ASIS_PAIR} : {}),
     title: answer.title,
-    info: {},
+    info: choice ? {[choice.key]: answer.choice} : {},   // 예: 서비스 유형
     grids: emptyDefGrids(tab),
     rowIds: {},
-    log
+    ...(defConfigOf(tab).entityLinks ? {entityIds: []} : {}),
+    log: userLogOf(answer.logText)
   };
   insertDefItem(tab, item);
   // 정의 칸이 있으면 첫 정의 칸, 없으면 첫 표의 첫 칸으로
@@ -273,7 +296,20 @@ async function deleteDefItem(tab, itemId) {
  */
 async function saveDefItems(tab) {
   const screen = app.screen;
-  const items = readDefInputs(tab).map(input => ({...input, log: (findDefItem(tab, input.id) || {}).log || []}));
-  await writeJson(screen.dir, defLayerFile(tab, layerOf(tab)), items.map(storedDefItem));
+  const layer = layerOf(tab);
+  const inputs = readDefInputs(tab);
+  // 시스템 이력: 처음 등록이면 생성, 아니면 바뀐 것 (마지막 등록 상태와 비교 — change-log.js)
+  const previousById = new Map((screen.savedDefItems[tab] || []).map(item => [item.id, item]));
+  for (const input of inputs) {
+    const item = findDefItem(tab, input.id);
+    const previous = previousById.get(input.id);
+    appendSystemLog(item, previous ? defChangeLogText(tab, previous, input) : creationLogText(item, layer));
+  }
+  const items = inputs.map(input => ({...input, log: (findDefItem(tab, input.id) || {}).log || []}));
+  await writeJson(screen.dir, defLayerFile(tab, layer), items.map(storedDefItem));
+  // 지운 항목은 항목 이력이 함께 사라지므로 화면 이력에 남김
+  const removed = [...previousById.values()].filter(previous => !inputs.some(input => input.id === previous.id));
+  for (const item of removed) addActivityLog(screen.meta, `${LAYER_LABELS[layer]} ${DEF_TABS[tab].label} ‘${item.title || UNNAMED_DEF_TITLE}’ 삭제`);
+  if (removed.length) await saveMeta();
   screen.savedDefItems[tab] = JSON.parse(JSON.stringify(items));
 }

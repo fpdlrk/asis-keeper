@@ -242,7 +242,7 @@ function overviewRowToInfo(tab, overviewRows) {
 }
 
 /** 빈 표 묶음 {표 키: []} */
-const emptyDefGrids = tab => Object.fromEntries(DEF_TABS[tab].grids.map(([key]) => [key, []]));
+const emptyDefGrids = tab => Object.fromEntries(defConfigOf(tab).grids.map(([key]) => [key, []]));
 
 /**
  * 표로 바꾸기 전 파일(LEGACY_DEF_FILES)을 읽어 '기본' 항목 하나로 만들기
@@ -277,7 +277,7 @@ const defDataFiles = tab => [defLayerFile(tab, 'asis'), defLayerFile(tab, 'tobe'
 /** 저장된 항목을 화면에서 쓰는 모양으로 (빠진 값 채우기 · 예전 개요 표 → 정의 칸 · 줄 id) */
 function normalizeDefItem(tab, item) {
   // 지금 탭에 있는 표만 (정의 칸으로 바뀐 예전 '개요' 표 등은 빼야 다시 저장할 때 남지 않음)
-  const grids = Object.fromEntries(DEF_TABS[tab].grids.map(([key]) => [key, (item.grids || {})[key] || []]));
+  const grids = Object.fromEntries(defConfigOf(tab).grids.map(([key]) => [key, (item.grids || {})[key] || []]));
   const rowIds = Object.fromEntries(Object.keys(grids).map(key => [key, rowIdsOf(grids[key], (item.rowIds || {})[key])]));
   return {
     id: item.id,
@@ -286,6 +286,7 @@ function normalizeDefItem(tab, item) {
     info: item.info || overviewRowToInfo(tab, item.grids && item.grids.overview),   // 정의 칸이 생기기 전 항목은 개요 표에서
     grids,
     rowIds,
+    ...(Array.isArray(item.entityIds) ? {entityIds: item.entityIds} : {}),   // 서비스가 쓰는 ENTITY
     log: item.log || []
   };
 }
@@ -329,5 +330,6 @@ const storedDefItem = item => ({
   ...(Object.keys(item.info || {}).length ? {info: item.info} : {}),
   grids: item.grids,
   rowIds: item.rowIds,
+  ...(item.entityIds && item.entityIds.length ? {entityIds: item.entityIds} : {}),
   ...(item.log && item.log.length ? {log: item.log} : {})
 });

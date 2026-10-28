@@ -14,7 +14,7 @@ const app = {
   root: null,
   /** 열려 있는 화면 상태. 현황(대시보드)일 때는 null */
   screen: null,
-  /** 화면에서 보고 있는 탭 id ('sql' | 'service' | 'object' | 'code' | 'attach') */
+  /** 화면에서 보고 있는 탭 id ('sql' | 'service' | 'entity' | 'object' | 'code' | 'attach') */
   tab: 'sql',
   /** 왼쪽 상태 필터. null = 전체, 0~3 = 상태 번호 */
   statusFilter: null,
@@ -22,6 +22,8 @@ const app = {
   statusCounts: [0, 0, 0, 0],
   /** 현황 화면 맨 위에 띄울 안내 문구 (파일 구조 변환 결과 등) */
   notice: '',
+  /** 보고서를 만들 때 읽어 둔 프로젝트 공통 ENTITY (화면이 열려 있지 않을 때 이름 찾기용 — entityTitleOf) */
+  entityCache: null,
   /** 비교할 때 공백·줄바꿈·대소문자 차이를 무시할지 (신규 SQL·비교 탭·비교 창 공통. 보고서는 항상 그대로 비교) */
   ignoreFormat: false
 };

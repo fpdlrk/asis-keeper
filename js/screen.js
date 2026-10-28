@@ -14,19 +14,19 @@
 
    탭: SQL · 서비스 · 오브젝트 · 공통코드관리 · 첨부 (두 소스 비교는 상단 [소스 비교] 창 — source-diff.js)
    원본 / 신규: 탭마다(SQL · 서비스 · 오브젝트 · 공통코드관리) 잠그기 전(원본 단계)에는 원본을, 잠근 뒤(신규 단계)에는 신규를 고칩니다 (screen-lock.js)
-   오른쪽 영역: 상태 이력(위 50%) · 메모(아래 50%)
+   화면 이력(상태 변경 · 삭제 · 잠금)은 상태 옆 [이력] 창, 변경 요약(메모)은 '요약·첨부' 탭 (오른쪽 영역은 없앰)
    등록은 하단 저장 바 하나로 모음. 잠그기는 각 탭 맨 위 단계 안내 띠의 단추로.
    ========================================================================== */
 
 /* ---- 탭 · 등록 영역 ---- */
 const SCREEN_TABS = [
   ['sql', 'SQL'],
-  ['service', '서비스'], ['object', '오브젝트'], ['code', '공통코드관리'], ['attach', '첨부']
+  ['service', '서비스'], ['entity', 'ENTITY'], ['object', '오브젝트'], ['code', '공통코드관리'], ['attach', '요약·첨부']
 ];
-/* 저장 바의 [등록] 이 다루는 영역과 이름 (등록 순서대로). 'common' = 티켓·작업자·원본 위치·메모
+/* 저장 바의 [등록] 이 다루는 영역과 이름 (등록 순서대로). 'common' = 작업자 · 원본 위치 · 변경 요약(메모)
    'sql' 과 정의서 탭은 그 탭에서 지금 고치는 쪽(원본 단계 → 원본, 신규 단계 → 신규)에 저장 */
 const SAVE_SECTIONS = [
-  ['common', '작업 정보'], ['sql', 'SQL'], ['service', '서비스'],
+  ['common', '작업 정보 · 변경 요약'], ['sql', 'SQL'], ['service', '서비스'], ['entity', 'ENTITY'],
   ['object', '오브젝트'], ['code', '공통코드관리'], ['attach', '첨부']
 ];
 
@@ -37,7 +37,7 @@ const SAVE_SECTIONS = [
 const EDITOR_PREFIX = {asis: 'a:', tobe: 't:', rollback: 'r:', pair: 'p:'};
 const editorId = (kind, blockId) => EDITOR_PREFIX[kind] + blockId;
 /* 글 입력란 높이(px). 여기에 없는 id 는 SQL 편집기 */
-const TEXT_EDITOR_HEIGHTS = {memo: 110};
+const TEXT_EDITOR_HEIGHTS = {memo: 160};
 const SQL_EDITOR_HEIGHT = 400;   // SQL 탭은 한 번에 하나만 보이므로 넉넉하게 (아래 모서리를 끌어 조절 가능)
 const ROLLBACK_EDITOR_HEIGHT = 120;
 
@@ -58,7 +58,10 @@ function createScreenState(path, dir, meta) {
     defItems: {},         // 정의서 탭 → 지금 고치는 쪽 항목 [{id, asisId?, title, info, grids, rowIds, log}] (screen-defs.js)
     savedDefItems: {},    // 정의서 탭 → 그 쪽의 마지막으로 등록된 항목 목록 (변경 감지 · 이력 바로 저장용)
     asisDefItems: {},     // 정의서 탭 → 원본 항목 (신규 단계에서 비교 · 삭제된 항목 표시, screen-changes.js)
-    activeDef: {},        // 정의서 탭 → 지금 보고 있는 항목 id
+    activeDef: {},        // 정의서 탭(과 'entity') → 지금 보고 있는 항목 id
+    entities: [],         // 프로젝트 공통 ENTITY (루트의 ENTITY_FILE — entity-data.js · screen-entity.js)
+    savedEntities: [],    // ENTITY 의 마지막 등록 상태
+    entityFilter: 'all',  // ENTITY 탭 보기: 'all'(전체, 처음) | 'used'(이 화면에서 쓰는 것) — 처음부터 'used' 면 연결 전 ENTITY 가 안 보여 사라진 것처럼 보임
     goneRows: {},         // 표 id → 원본에만 있는 줄 [{id, cells}] (삭제된 줄 되살리기용, screen-changes.js)
     removedTobeBlocks: [],              // 삭제한 신규 블록 (등록할 때 파일도 지움)
     removedAsisBlocks: [],              // 잠금을 푼 뒤 삭제한 등록된 기존 블록 (다시 잠글 때 파일도 지움)
@@ -122,6 +125,7 @@ function isRegistered(section) {
   if (section === 'attach') return screen.savedFiles.attach.length > 0;
   if (section === 'common') return !!(screen.savedValues.memo || '').trim();
   if (section in DEF_TABS) return (screen.savedDefItems[section] || []).length > 0;
+  if (section === 'entity') return screen.savedEntities.length > 0;
   return false;
 }
 
@@ -136,6 +140,7 @@ function isDirty(section) {
     return fieldChanged || isEditorChanged('memo');
   }
   if (section in DEF_TABS) return isDefTabChanged(section);
+  if (section === 'entity') return isEntityTabChanged();
   return false;
 }
 
@@ -156,11 +161,13 @@ function refreshIndicators() {
   const screen = app.screen;
   if (!screen || !$('#savebar')) return;
 
-  // 탭(과 오른쪽 메모 제목) 옆 표시. 'common' 표시는 메모 제목 옆에 있음
-  for (const section of [...SCREEN_TABS.map(([id]) => id), 'common']) {
+  // 탭 옆 표시. '요약·첨부' 탭은 변경 요약(메모)까지 함께 봄 (메모는 'common' 영역으로 등록)
+  const memoChanged = isEditorChanged('memo'), memoSaved = !!(screen.savedValues.memo || '').trim();
+  for (const section of SCREEN_TABS.map(([id]) => id)) {
     const mark = document.querySelector(`.mk[data-m="${section}"]`);
     if (!mark) continue;
-    const dirty = isDirty(section), registered = isRegistered(section);
+    const dirty = isDirty(section) || (section === 'attach' && memoChanged);
+    const registered = isRegistered(section) || (section === 'attach' && memoSaved);
     mark.className = 'mk ' + (dirty ? 'dirty' : registered ? 'done' : '');
     mark.textContent = dirty ? '' : registered ? '✓' : '';
     mark.title = dirty ? '아직 등록하지 않은 변경이 있습니다' : registered ? '등록된 내용이 있습니다' : '';
@@ -168,9 +175,10 @@ function refreshIndicators() {
 
   // 첨부 탭 이름에 개수, 탭 줄의 이름 · ● · 원본 대비 상태
   const attachLabel = $('.tab[data-t="attach"] .tl');
-  if (attachLabel) attachLabel.textContent = '첨부' + (screen.savedFiles.attach.length ? ' ' + screen.savedFiles.attach.length : '');
+  if (attachLabel) attachLabel.textContent = '요약·첨부' + (screen.savedFiles.attach.length ? ' ' + screen.savedFiles.attach.length : '');
   refreshSqlTabMarks(layerOf('sql'));
   for (const tab of Object.keys(DEF_TABS)) refreshDefTabMarks(tab);
+  refreshEntityTabMarks();
   scheduleChangeMarks();
 
   // 저장 바 (원본 단계인 탭은 '(원본)'을 붙여 원본으로 저장된다는 것을 알림)
@@ -239,6 +247,10 @@ async function openScreen(path, reload) {
       screen.defItems[tab] = locked ? layers.tobe : layers.asis;
       screen.savedDefItems[tab] = JSON.parse(JSON.stringify(screen.defItems[tab]));   // 등록된 상태 (따로 복사해 둠)
     }
+    // 프로젝트 공통 ENTITY (화면을 열 때마다 새로 읽음 — 다른 화면에서 고친 내용이 보이게)
+    screen.entities = await loadEntities(app.root);
+    screen.savedEntities = JSON.parse(JSON.stringify(screen.entities));
+    if (reload && previousScreen) screen.entityFilter = previousScreen.entityFilter;
     for (const kind of Object.keys(FILE_DIRS)) screen.savedFiles[kind] = await listFilesDeep(dir, FILE_DIRS[kind]);
 
     homeRenderSeq++;   // 그리던 현황(대시보드)이 있으면 멈춤
@@ -352,15 +364,22 @@ function gridHtml(tableId, columnsKey, grid, title, readOnly = false) {
     + `<div class="gone-rows" data-gone-rows="${tableId}"></div></div>`;
 }
 
-/** 상태 이력 목록 — 한 줄 형식: [요청] 2026.10.20 · 홍길동 (바꾼 사람 기록이 없으면 이 화면의 작업자, 그것도 없으면 -) */
-function statusLogHtml(meta) {
-  const entries = (meta.statusLog || []).slice().reverse();
-  if (!entries.length) return '<li class="muted">기록된 상태 변경이 없습니다.</li>';
-  return entries.map(entry => {
+/**
+ * 화면 이력 목록 (최근 것이 위) — 상태 변경(meta.statusLog)과 화면의 일(meta.activityLog: 항목 삭제 · 잠금 · 잠금 풀기)을 시간순으로
+ *   상태: [요청] 2026.10.20 · 홍길동 (바꾼 사람 기록이 없으면 이 화면의 작업자, 그것도 없으면 -)
+ *   일  : [시스템] 2026.10.20 · 홍길동 + 다음 줄에 내용
+ */
+function screenLogHtml(meta) {
+  const statusRows = (meta.statusLog || []).map(entry => {
     const name = normalizeStatus(entry.status);
-    return `<li title="${escapeHtml(formatDateTime(entry.at))}"><b class="st-t s${STATUS_LIST.indexOf(name)}">[${escapeHtml(name)}]</b> `
-      + `${escapeHtml(formatDay(entry.at))} <span class="sep">·</span> ${escapeHtml(entry.by || meta.worker || '-')}</li>`;
-  }).join('');
+    return {at: entry.at, html: `<li title="${escapeHtml(formatDateTime(entry.at))}"><b class="st-t s${STATUS_LIST.indexOf(name)}">[${escapeHtml(name)}]</b> `
+      + `${escapeHtml(formatDay(entry.at))} <span class="sep">·</span> ${escapeHtml(entry.by || meta.worker || '-')}</li>`};
+  });
+  const activityRows = (meta.activityLog || []).map(entry => ({at: entry.at, html: `<li class="act" title="${escapeHtml(formatDateTime(entry.at))}">`
+    + `${logSourceTagHtml(entry)} ${escapeHtml(formatDay(entry.at))} <span class="sep">·</span> ${escapeHtml(entry.by || '-')}`
+    + `<div class="act-t">${escapeHtml(entry.text)}</div></li>`}));
+  const rows = [...statusRows, ...activityRows].sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return rows.length ? rows.map(row => row.html).join('') : '<li class="muted">기록된 이력이 없습니다.</li>';
 }
 
 /** 화면 위쪽: 제목 · 작업 정보 한 줄 · 경고 · 탭 (원본이 잠긴 탭은 이름 옆에 자물쇠) */
@@ -377,6 +396,7 @@ function screenHeaderHtml(meta) {
       <label>작업자<input type="text" id="worker" class="inl" value="${escapeHtml(meta.worker || '')}" placeholder="-"></label>
       <label title="파일을 올릴 때 저장 경로의 기본값으로 쓰입니다">원본 위치<input type="text" id="origin" class="inl mono" value="${escapeHtml(meta.origin || '')}" placeholder="예: /src/main/webapp/hr/"></label>
       <label>상태<select id="stSel" class="stpill s${statusIndex}" title="바꾸면 바로 저장되고 이력이 남습니다">${statusOptions}</select></label>
+      <button type="button" class="btn btn-s btn-ghost" id="btnScreenLog" title="상태 변경 · 항목 삭제 · 잠금 기록">이력</button>
       <span id="integrity"></span>
     </div>
     <div id="warn"></div>
@@ -410,7 +430,17 @@ function screenPanelsHtml(meta) {
     </div>
 
     ${Object.keys(DEF_TABS).map(defPanelHtml).join('')}
-    <div class="panel narrow" data-t="attach"><p class="muted">명세서, 화면 캡처 같은 참고 파일을 올리고 등록하세요. 보고서의 ‘참고 파일’에 실립니다.</p>${dropZoneHtml('attach')}<ul class="files" id="list-attach"></ul></div>
+    ${entityPanelHtml()}
+    <div class="panel" data-t="attach">
+      <section class="attach-sec">
+        <div class="sec-h"><span class="fld-l grid-title">변경 요약</span><span class="ent-hint">화면 전체의 변경 요약 · 보고서의 ‘변경 내용 요약’에 실립니다</span></div>
+        <div class="ed" data-id="memo"></div>
+      </section>
+      <section class="attach-sec">
+        <div class="sec-h"><span class="fld-l grid-title">첨부</span><span class="ent-hint">명세서, 화면 캡처 같은 참고 파일 · 보고서의 ‘참고 파일’에 실립니다</span></div>
+        ${dropZoneHtml('attach')}<ul class="files" id="list-attach"></ul>
+      </section>
+    </div>
   </div>`;
 }
 
@@ -419,16 +449,16 @@ const saveBarHtml = () => `<div class="savebar" id="savebar"><span id="sbText" c
   <button type="button" class="btn btn-s btn-ghost" id="btnDiscard">변경 취소</button>
   <button type="button" class="btn btn-s btn-primary" id="btnSaveAll">등록 <kbd>Ctrl+S</kbd></button></div>`;
 
-/** 오른쪽 영역: 상태 이력(위 50%) · 메모(아래 50%), 각각 넘치면 스크롤 */
-const sidePanelHtml = meta => `
-  <section class="rs-sec" aria-label="상태 이력">
-    <div class="rs-h"><b>상태 이력</b><span class="muted">상태를 바꾸면 자동 기록</span></div>
-    <ul class="stlog" id="stlog">${statusLogHtml(meta)}</ul>
-  </section>
-  <section class="rs-sec" aria-label="메모">
-    <div class="rs-h"><b>메모</b><span class="muted">비고 · 변경 요약</span><em class="mk" data-m="common"></em></div>
-    <div class="ed" data-id="memo"></div>
-  </section>`;
+/** 화면 이력 창 열기 (상태 옆 [이력]) */
+function openScreenLog() {
+  $('#stlog').innerHTML = screenLogHtml(app.screen.meta);
+  $('#screenLogModal').hidden = false;
+}
+
+/** 화면 이력이 바뀌었을 때 (상태 변경 · 등록) — 창이 열려 있으면 다시 그림 */
+function refreshScreenLog() {
+  if (app.screen && !$('#screenLogModal').hidden) $('#stlog').innerHTML = screenLogHtml(app.screen.meta);
+}
 
 /* ======================= 화면 요약 줄 =======================
    스크롤로 위쪽 머리(화면 탭 줄)가 사라지면 맨 위에 한 줄짜리 요약 줄이 내려옵니다.
@@ -448,7 +478,7 @@ const miniBarShellHtml = () => '<div class="scr-mini" id="scrMini"><div class="s
 function currentPillItem() {
   const screen = app.screen;
   const barId = app.tab === 'sql' ? layerOf('sql') : app.tab;
-  const activeId = isSqlTabBar(barId) ? screen.activeBlock[barId] : (barId in DEF_TABS ? screen.activeDef[barId] : '');
+  const activeId = isSqlTabBar(barId) ? screen.activeBlock[barId] : (barId in DEF_TABS || barId === 'entity' ? screen.activeDef[barId] : '');
   const tab = activeId ? $(`#tabs-${barId} [data-tab-bid="${activeId}"]`) : null;
   return tab ? {title: tab.querySelector('.sqltab-t').textContent, dirty: tab.classList.contains('dirty')} : null;
 }
@@ -502,18 +532,17 @@ async function renderScreen() {
   const meta = screen.meta;
   // SQL 이 하나도 없으면 빈 블록을 만들지 않고 '[+ SQL 추가]' 안내를 보여 줍니다 (renderSqlTabs)
   $('#main').innerHTML = `<div class="scr">${miniBarShellHtml()}${screenHeaderHtml(meta)}${screenPanelsHtml(meta)}${saveBarHtml()}</div>`;
-  $('#rside').innerHTML = sidePanelHtml(meta);
-  $('#rside').hidden = false;
-  $('#app').classList.add('has-screen');
 
   // 편집기를 만들고, 지금 값을 "등록된 값" 으로 기억 (변경 감지 기준)
-  $$('#main .ed, #rside .ed').forEach(createEditor);
+  $$('#main .ed').forEach(createEditor);
   screen.savedBlockOrder.asis = blockOrderSignature('asis');
   screen.savedBlockOrder.tobe = blockOrderSignature('tobe');
   screen.hasSavedTobe = hasSavedTobeSql();
   renderSqlTabs('asis');
   renderSqlTabs('tobe');
   for (const tab of Object.keys(DEF_TABS)) renderDefTabs(tab);
+  renderEntityTabs();
+  verifyEntityHashes();
 
   await renderTobeHistory();
   for (const kind of Object.keys(FILE_DIRS)) {

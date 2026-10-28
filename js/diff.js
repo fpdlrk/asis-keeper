@@ -3,7 +3,7 @@
      - diffLines()        : 줄 단위 비교 (LCS 알고리즘)
      - sideBySideHtml()   : 나란히 보기 표 HTML — 비교 탭 · 비교 창 · 보고서가 함께 씀
      - 비교 창(#diffModal) : SQL 블록 하나 / 파일 하나
-     - 비교 탭(#cmpBody)   : 화면의 모든 SQL · 정의서 항목 · 파일을 한 번에 (신규 단계에서만 — 원본이 잠긴 뒤)
+     - 비교 탭(#cmpBody)   : 화면의 모든 SQL · 정의서 항목 · 파일을 한 번에 (원본을 잠근 탭만 — 신규 단계)
        항목 이름을 누르면 그 탭의 그 항목으로 이동 (goToItem)
    ========================================================================== */
 
@@ -301,18 +301,20 @@ async function renderCompareTab() {
   if (!box) return;
   const seq = ++compareRenderSeq;
   const screen = app.screen;
-  if (!isLocked()) {
-    box.innerHTML = '<div class="empty-box"><b>원본 단계입니다</b><p class="muted">원본을 모두 넣고 위쪽 [원본 등록 후 잠그기]를 누르면, 이후 신규 작업과 원본을 여기에서 한 번에 비교할 수 있습니다.</p></div>';
+  if (!anyTabLocked(screen.meta)) {
+    box.innerHTML = '<div class="empty-box"><b>아직 원본을 잠근 탭이 없습니다</b><p class="muted">각 탭 위의 [원본 등록 후 잠그기]로 원본을 잠그면, 이후 신규 작업과 원본을 여기에서 한 번에 비교할 수 있습니다.</p></div>';
     return;
   }
+  const notLocked = LAYER_TABS.filter(tab => !isTabLocked(tab)).map(layerTabLabel);
   box.innerHTML = '<p class="muted">비교하는 중…</p>';
 
   const sections = [];
   const summary = {sql: 0, sqlNew: 0, sqlGone: 0, modified: 0, added: 0, same: 0, asisOnly: 0};
   const defCounts = {changed: 0, new: 0, gone: 0};
 
-  // 1) SQL: 신규 블록에 연결된 기존 블록끼리 (연결은 findPairedAsisBlock)
-  const asisBlocks = readBlockInputs('asis'), tobeBlocks = readBlockInputs('tobe');
+  // 1) SQL: 신규 블록에 연결된 원본 블록끼리 (연결은 findPairedAsisBlock) — SQL 원본을 잠갔을 때만
+  const sqlLocked = isTabLocked('sql');
+  const asisBlocks = sqlLocked ? readBlockInputs('asis') : [], tobeBlocks = sqlLocked ? readBlockInputs('tobe') : [];
   const pairedAsisIds = new Set();
   tobeBlocks.forEach((after, order) => {
     const before = findPairedAsisBlock(after, order, asisBlocks);
@@ -341,8 +343,8 @@ async function renderCompareTab() {
       + sideBySideHtml(before.sql, ''));
   }
 
-  // 2) 정의서: 항목마다 원본과 비교
-  for (const tab of Object.keys(DEF_TABS)) {
+  // 2) 정의서: 항목마다 원본과 비교 — 원본을 잠근 탭만
+  for (const tab of Object.keys(DEF_TABS).filter(isTabLocked)) {
     const html = defCompareHtml(tab, defCounts);
     if (html) sections.push(html);
   }
@@ -386,7 +388,8 @@ async function renderCompareTab() {
     + chip(defCounts.changed, '정의서 변경', 'warn') + chip(defCounts.new, '정의서 신규', 'ok') + chip(defCounts.gone, '정의서 삭제', 'bad')
     + chip(summary.modified, '파일 수정', 'warn') + chip(summary.added, '파일 신규', 'ok')
     + chip(summary.same, '파일 동일', '') + chip(summary.asisOnly, '파일 원본만', '');
-  box.innerHTML = `<div class="cmp-sum">${chips || '<span class="tag">변경 없음</span>'}</div>`
+  const notLockedNote = notLocked.length ? `<span class="muted">원본 단계라 비교에서 뺀 탭: ${escapeHtml(notLocked.join(', '))}</span>` : '';
+  box.innerHTML = `<div class="cmp-sum">${chips || '<span class="tag">변경 없음</span>'}${notLockedNote}</div>`
     + `<div class="cmp">${sections.join('')}</div>`;
 }
 

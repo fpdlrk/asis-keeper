@@ -13,9 +13,9 @@
      screen-save.js    : 등록 · 상태 변경, 화면 이벤트 연결
 
    탭: SQL · 비교 · 서비스 · 오브젝트 · 공통코드관리 · 첨부
-   원본 / 신규: 잠그기 전(원본 단계)에는 모든 탭이 원본을, 잠근 뒤(신규 단계)에는 신규를 고칩니다 (screen-lock.js)
+   원본 / 신규: 탭마다(SQL · 서비스 · 오브젝트 · 공통코드관리) 잠그기 전(원본 단계)에는 원본을, 잠근 뒤(신규 단계)에는 신규를 고칩니다 (screen-lock.js)
    오른쪽 영역: 상태 이력(위 50%) · 메모(아래 50%)
-   등록은 하단 저장 바 하나로 모음. 잠그기는 화면 위 단계 안내 띠의 단추로.
+   등록은 하단 저장 바 하나로 모음. 잠그기는 각 탭 맨 위 단계 안내 띠의 단추로.
    ========================================================================== */
 
 /* ---- 탭 · 등록 영역 ---- */
@@ -24,7 +24,7 @@ const SCREEN_TABS = [
   ['service', '서비스'], ['object', '오브젝트'], ['code', '공통코드관리'], ['attach', '첨부']
 ];
 /* 저장 바의 [등록] 이 다루는 영역과 이름 (등록 순서대로). 'common' = 티켓·작업자·원본 위치·메모
-   'sql' 과 정의서 탭은 지금 고치는 쪽(원본 단계 → 원본, 신규 단계 → 신규)에 저장 */
+   'sql' 과 정의서 탭은 그 탭에서 지금 고치는 쪽(원본 단계 → 원본, 신규 단계 → 신규)에 저장 */
 const SAVE_SECTIONS = [
   ['common', '작업 정보'], ['sql', 'SQL'], ['service', '서비스'],
   ['object', '오브젝트'], ['code', '공통코드관리'], ['attach', '첨부']
@@ -115,7 +115,7 @@ function readGridOf(table) {
 function isRegistered(section) {
   const screen = app.screen;
   if (section === 'sql') {
-    return isLocked()
+    return isTabLocked('sql')
       ? screen.hasSavedTobe || screen.savedFiles.tobe.length > 0
       : ((screen.meta.sqlBlocks && screen.meta.sqlBlocks.asis) || []).length > 0;
   }
@@ -129,7 +129,7 @@ function isRegistered(section) {
 function isDirty(section) {
   const screen = app.screen;
   if (!screen) return false;
-  if (section === 'sql') return isBlockListChanged(currentLayer()) || screen.pendingFiles[currentLayer()].length > 0;
+  if (section === 'sql') return isBlockListChanged(layerOf('sql')) || screen.pendingFiles[layerOf('sql')].length > 0;
   if (section === 'attach') return screen.pendingFiles.attach.length > 0;
   if (section === 'common') {
     const fieldChanged = COMMON_FIELDS.some(field => $('#' + field) && $('#' + field).value.trim() !== (screen.meta[field] || ''));
@@ -169,16 +169,16 @@ function refreshIndicators() {
   // 첨부 탭 이름에 개수, 탭 줄의 이름 · ● · 원본 대비 상태
   const attachLabel = $('.tab[data-t="attach"] .tl');
   if (attachLabel) attachLabel.textContent = '첨부' + (screen.savedFiles.attach.length ? ' ' + screen.savedFiles.attach.length : '');
-  refreshSqlTabMarks(currentLayer());
+  refreshSqlTabMarks(layerOf('sql'));
   for (const tab of Object.keys(DEF_TABS)) refreshDefTabMarks(tab);
   scheduleChangeMarks();
 
-  // 저장 바 (원본 단계면 원본을 등록한다는 것을 함께 알림)
+  // 저장 바 (원본 단계인 탭은 '(원본)'을 붙여 원본으로 저장된다는 것을 알림)
   const dirtySections = SAVE_SECTIONS.filter(([section]) => isDirty(section));
-  const layerNote = isLocked() ? '' : '<span class="muted">· 원본 단계: 등록하면 원본으로 저장됩니다</span>';
-  $('#sbText').innerHTML = (dirtySections.length
-    ? `<i class="dot warn"></i><b>등록하지 않은 변경 ${dirtySections.length}건</b><span class="muted">${dirtySections.map(([, label]) => label).join(' · ')}</span>`
-    : `<span class="muted ok-t">${ICON.check} 모든 변경이 등록되었습니다</span>`) + layerNote;
+  const sectionLabel = ([section, label]) => label + (LAYER_TABS.includes(section) && !isTabLocked(section) ? '(원본)' : '');
+  $('#sbText').innerHTML = dirtySections.length
+    ? `<i class="dot warn"></i><b>등록하지 않은 변경 ${dirtySections.length}건</b><span class="muted">${dirtySections.map(sectionLabel).join(' · ')}</span>`
+    : `<span class="muted ok-t">${ICON.check} 모든 변경이 등록되었습니다</span>`;
   $('#btnSaveAll').disabled = !dirtySections.length;
   $('#btnDiscard').disabled = !dirtySections.length;
   renderMiniBar();
@@ -224,11 +224,12 @@ async function openScreen(path, reload) {
       screen.initialValues[editorId('tobe', block.id)] = block.sql;
       screen.initialValues[editorId('rollback', block.id)] = block.rbText;
     }
-    // 정의서: 화면에는 지금 고치는 쪽만, 원본은 비교용으로 따로
+    // 정의서: 화면에는 지금 고치는 쪽만, 원본은 비교용으로 따로 (탭마다 잠금이 따로)
     for (const tab of Object.keys(DEF_TABS)) {
-      const layers = await loadDefLayers(dir, tab, !!meta.asisLocked);
+      const locked = isTabLockedIn(meta, tab);
+      const layers = await loadDefLayers(dir, tab, locked);
       screen.asisDefItems[tab] = layers.asis;
-      screen.defItems[tab] = meta.asisLocked ? layers.tobe : layers.asis;
+      screen.defItems[tab] = locked ? layers.tobe : layers.asis;
       screen.savedDefItems[tab] = JSON.parse(JSON.stringify(screen.defItems[tab]));   // 등록된 상태 (따로 복사해 둠)
     }
     for (const kind of Object.keys(FILE_DIRS)) screen.savedFiles[kind] = await listFilesDeep(dir, FILE_DIRS[kind]);
@@ -349,12 +350,13 @@ function statusLogHtml(meta) {
   }).join('');
 }
 
-/** 화면 위쪽: 제목 · 작업 정보 한 줄 · 경고 · 단계 안내(원본/신규) · 잠금 해제 이력 · 탭 */
+/** 화면 위쪽: 제목 · 작업 정보 한 줄 · 경고 · 탭 (원본이 잠긴 탭은 이름 옆에 자물쇠) */
 function screenHeaderHtml(meta) {
   const statusIndex = statusIndexOf(meta);
   const statusOptions = STATUS_LIST.map((name, i) => `<option value="${i}"${i === statusIndex ? ' selected' : ''}>${name}</option>`).join('');
+  const lockMark = id => (LAYER_TABS.includes(id) && isTabLockedIn(meta, id) ? `<span class="tab-lk" title="원본 잠김 · 신규 작업 중">${ICON.lock}</span>` : '');
   const tabs = SCREEN_TABS.map(([id, label]) =>
-    `<button type="button" role="tab" class="tab" data-t="${id}" aria-selected="false"><span class="tl">${label}</span><em class="mk" data-m="${id}"></em></button>`).join('');
+    `<button type="button" role="tab" class="tab" data-t="${id}" aria-selected="false">${lockMark(id)}<span class="tl">${label}</span><em class="mk" data-m="${id}"></em></button>`).join('');
   return `<div class="scr-head">
     <div class="row1"><h1 class="h1">${escapeHtml(lastOf(app.screen.path))}</h1></div>
     <div class="meta">
@@ -365,7 +367,6 @@ function screenHeaderHtml(meta) {
       <span id="integrity"></span>
     </div>
     <div id="warn"></div>
-    <div class="phase">${phaseBannerHtml(meta)}${unlockLogBannerHtml(meta)}</div>
     <nav class="tabs" role="tablist" aria-label="화면 탭">${tabs}</nav>
   </div>`;
 }
@@ -377,9 +378,10 @@ function screenHeaderHtml(meta) {
  */
 function screenPanelsHtml(meta) {
   const screen = app.screen;
-  const locked = !!meta.asisLocked;
+  const locked = isTabLockedIn(meta, 'sql');
   return `<div class="scr-body">
     <div class="panel" data-t="sql">
+      ${tabPhaseHtml('sql')}
       <div class="layer" data-layer="asis"${locked ? ' hidden' : ''}>
         ${pillTabsBarHtml('asis')}
         <div id="blocks-asis" class="blocks${locked ? ' locked' : ''}">${screen.blocks.asis.map(block => sqlBlockHtml('asis', block, locked)).join('')}</div>
@@ -437,7 +439,7 @@ const miniBarShellHtml = () => '<div class="scr-mini" id="scrMini"><div class="s
  */
 function currentPillItem() {
   const screen = app.screen;
-  const barId = app.tab === 'sql' ? currentLayer() : app.tab;
+  const barId = app.tab === 'sql' ? layerOf('sql') : app.tab;
   const activeId = isSqlTabBar(barId) ? screen.activeBlock[barId] : (barId in DEF_TABS ? screen.activeDef[barId] : '');
   const tab = activeId ? $(`#tabs-${barId} [data-tab-bid="${activeId}"]`) : null;
   return tab ? {title: tab.querySelector('.sqltab-t').textContent, dirty: tab.classList.contains('dirty')} : null;
@@ -556,7 +558,7 @@ function createEditor(placeholder) {
   }
 
   // 읽기 전용: 잠긴 기존 SQL, 신규 탭 왼쪽의 기존 SQL
-  const readOnly = (id.startsWith(EDITOR_PREFIX.asis) && !!screen.meta.asisLocked) || id.startsWith(EDITOR_PREFIX.pair);
+  const readOnly = (id.startsWith(EDITOR_PREFIX.asis) && isTabLocked('sql')) || id.startsWith(EDITOR_PREFIX.pair);
   placeholder.style.height = (id.startsWith(EDITOR_PREFIX.rollback) ? ROLLBACK_EDITOR_HEIGHT : SQL_EDITOR_HEIGHT) + 'px';
   placeholder.style.lineHeight = '22px';   // 시안: 코드 12.5px / 줄 높이 22px
   const editor = ace.edit(placeholder, sqlEditorOptions(readOnly));
@@ -598,7 +600,7 @@ function showTab(tabId) {
     button.setAttribute('aria-selected', String(active));
   });
   resizeAllEditors();
-  if (tabId === 'sql' && isLocked()) refreshPairedBlocks();
+  if (tabId === 'sql' && isTabLocked('sql')) refreshPairedBlocks();
   if (tabId === 'cmp') renderCompareTab();
   scheduleChangeMarks();
   renderMiniBar();
@@ -611,7 +613,7 @@ function showTab(tabId) {
  */
 function goToItem(tabId, itemId) {
   showTab(tabId);
-  if (tabId === 'sql') activateSqlTab(currentLayer(), itemId);
+  if (tabId === 'sql') activateSqlTab(layerOf('sql'), itemId);
   else activateDefTab(tabId, itemId);
   scrollScreenToTop();
 }

@@ -232,12 +232,12 @@ function ensureActiveSqlTab(kind) {
  */
 function renderSqlTabs(kind) {
   const screen = app.screen;
-  const showGone = kind === 'tobe' && isLocked();
+  const showGone = kind === 'tobe' && isTabLocked('sql');
   if (showGone) renderGoneSqlBlocks();   // 탭 줄보다 먼저 (고른 탭 확인에 씀)
   ensureActiveSqlTab(kind);
   const entries = readBlockInputs(kind).map(({id, title}) => ({id, title}));
   if (showGone) entries.push(...goneSqlBlocks().map(block => goneTabEntry(block.id, block.title)));
-  const readOnly = kind === 'asis' && isLocked();
+  const readOnly = kind === 'asis' && isTabLocked('sql');
   renderPillTabs(kind, entries, {
     activeId: screen.activeBlock[kind],
     removable: !readOnly,
@@ -276,7 +276,7 @@ function activateSqlTab(kind, blockId) {
  */
 function isSqlBlockChanged(kind, blockId, savedRows) {
   const screen = app.screen;
-  if (kind === 'asis' && screen.meta.asisLocked) return false;
+  if (kind === 'asis' && isTabLocked('sql')) return false;
   const saved = savedRows.find(([id]) => id === blockId);
   if (!saved) return true;   // 아직 등록하지 않은 SQL
   const element = $(`#blocks-${kind} .blk[data-id="${blockId}"]`);
@@ -291,7 +291,7 @@ function isSqlBlockChanged(kind, blockId, savedRows) {
 function refreshSqlTabMarks(kind) {
   if (!$('#tabs-' + kind)) return;
   const savedRows = JSON.parse(app.screen.savedBlockOrder[kind] || '[]');
-  const withState = kind === 'tobe' && isLocked();
+  const withState = kind === 'tobe' && isTabLocked('sql');
   const asisInputs = withState ? readBlockInputs('asis') : [];
   const states = [];
   readBlockInputs(kind).forEach((input, order) => {
@@ -440,7 +440,7 @@ function findLogTarget(scope, kind, itemId) {
   return {
     item: (screen.defItems[kind] || []).find(item => item.id === itemId),
     savedItem: (screen.savedDefItems[kind] || []).find(item => item.id === itemId),
-    persist: () => writeJson(screen.dir, defLayerFile(kind, currentLayer()), screen.savedDefItems[kind].map(storedDefItem))
+    persist: () => writeJson(screen.dir, defLayerFile(kind, layerOf(kind)), screen.savedDefItems[kind].map(storedDefItem))
   };
 }
 

@@ -440,7 +440,7 @@ async function resetCopiedWorkLog(dir) {
     const now = new Date();
     const cleaned = {...meta, status: STATUS_LIST[0], createdAt: now.toLocaleString('ko-KR'),
       statusLog: [{status: STATUS_LIST[0], at: now.toISOString()}]};
-    for (const key of ['asisLocked', 'asisSavedAt', 'asisLockedIds', 'hashes', 'asisUnlockLog']) delete cleaned[key];
+    for (const key of ['tabLocks', ...LEGACY_LOCK_KEYS]) delete cleaned[key];
     // SQL 마다 쌓은 이력도 작업 기록이므로 지움 (SQL 내용·이름·짝은 그대로)
     if (cleaned.sqlBlocks) {
       cleaned.sqlBlocks = Object.fromEntries(Object.entries(cleaned.sqlBlocks)

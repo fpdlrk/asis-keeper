@@ -219,8 +219,11 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .fld input[type=text]:focus, .inp:focus { border-color: var(--acc); outline: 0; box-shadow: 0 0 0 3px var(--acc-soft); }
 .inp.mono, .fld input.mono { font-family: var(--mono); font-size: 12px; }
 #warn .banner { margin: 14px 0 0; }
-/* 단계 안내 (원본 단계 / 신규 단계 — screen-lock.js) */
-.phase .banner { margin: 14px 0 0; }
+/* 탭 맨 위 단계 안내 (원본 단계 / 신규 단계 — screen-lock.js) · 원본이 잠긴 탭 이름 옆 자물쇠 */
+.phase { margin-bottom: 12px; }
+.phase:empty { display: none; }
+.tab-lk { display: inline-flex; margin-right: 4px; color: var(--sub); }
+.tab-lk svg { width: 12px; height: 12px; }
 
 .stlog { list-style: none; margin: 0; padding: 0; }
 .stlog li { padding: 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
@@ -270,6 +273,10 @@ kbd { font: 11px var(--sans); opacity: .8; margin-left: 4px; }
 .bt { flex: 1 1 auto; width: 100%; min-width: 0; height: 32px; padding: 0 8px; border: 1px solid transparent; border-radius: var(--r); background: transparent; font-size: 15px; font-weight: 700; color: var(--ink); }
 .bt:hover { border-color: var(--field); background: #fff; }
 .bt:focus { border-color: var(--acc); background: #fff; outline: 0; }
+/* 평소(읽기 전용)에는 글자처럼 — 더블클릭하면 위의 입력칸 모양으로 (screen-blocks.js startTitleEdit) */
+.bt[readonly] { cursor: default; }
+.bt[readonly]:focus { border-color: transparent; background: transparent; }
+.bt[readonly]:hover { border-color: transparent; background: var(--soft); }   /* 마우스를 올리면 연한 회색 — 더블클릭할 수 있다는 표시 */
 .bt:disabled { color: var(--ink); -webkit-text-fill-color: var(--ink); border-color: transparent; background: transparent; }
 .blk-h .sp { flex: 0 1 auto; }
 /* SQL 탭: 고른 탭의 블록만 보임 (screen-sqltabs.js) */

@@ -123,13 +123,56 @@ const hasSavedTobeSql = () => Object.entries(app.screen.savedValues)
 
 /* ======================= 블록 그리기 ======================= */
 
+/* ======================= 제목칸 더블클릭 수정 =======================
+   블록 제목칸(SQL 제목 · 정의서 항목 이름, class="bt")은 평소 읽기 전용이고, 더블클릭하면 고칠 수 있게 됩니다.
+   한 번 클릭으로 실수로 고쳐지는 일을 막기 위함입니다. Enter · 다른 곳 클릭 = 마침, Esc = 고치기 전 이름으로 되돌림 */
+
+/* 제목칸에 마우스를 올리면 보이는 안내 */
+const TITLE_EDIT_HINT = '더블클릭하면 고칠 수 있습니다';
+/** 제목칸 공통 속성: 읽기 전용 + 안내 (잠긴 칸은 disabled 라 안내 없음) */
+const TITLE_VIEW_ATTRS = `readonly title="${TITLE_EDIT_HINT}"`;
+
+/** 더블클릭: 고칠 수 있게 하고 글자 전체 선택 */
+function startTitleEdit(input) {
+  if (input.disabled || !input.readOnly) return;
+  input.dataset.before = input.value;
+  input.readOnly = false;
+  input.removeAttribute('title');
+  input.focus();
+  input.select();
+}
+
+/** 고치기 마침 (cancel = 고치기 전 이름으로 되돌림) → 다시 읽기 전용 */
+function finishTitleEdit(input, cancel = false) {
+  if (input.readOnly) return;
+  if (cancel && input.dataset.before !== undefined) {
+    input.value = input.dataset.before;
+    refreshIndicators();
+  }
+  delete input.dataset.before;
+  input.readOnly = true;
+  input.title = TITLE_EDIT_HINT;
+  input.setSelectionRange(0, 0);
+}
+
+/** 제목칸 키: Enter = 마침, Esc = 되돌림 (화면 이벤트 연결은 initScreen) */
+function handleTitleKeydown(e) {
+  const input = e.target;
+  if (!input.classList || !input.classList.contains('bt') || input.readOnly) return;
+  if (e.key === 'Enter' || e.key === 'Escape') {
+    e.preventDefault();
+    finishTitleEdit(input, e.key === 'Escape');
+    input.blur();
+  }
+}
+
 /**
- * 블록 제목 입력칸
+ * 블록 제목 입력칸 (평소 읽기 전용 — 더블클릭해서 고침)
  * @param {boolean} disabled 잠긴 기존 SQL 이면 true
  * @param {boolean} withCopy 마우스를 올리면 나타나는 복사 아이콘을 붙일지 (신규 SQL 만 — 기존 SQL 제목에는 두지 않음)
  */
 const blockTitleHtml = (block, disabled, withCopy) => `<span class="bt-wrap${withCopy ? ' has-copy' : ''}">`
-  + `<input type="text" class="bt" value="${escapeHtml(block.title)}" aria-label="SQL 블록 제목" placeholder="제목 입력"${disabled ? ' disabled' : ''}>`
+  + `<input type="text" class="bt" value="${escapeHtml(block.title)}" aria-label="SQL 블록 제목" placeholder="제목 입력" ${disabled ? 'disabled' : TITLE_VIEW_ATTRS}>`
   + `${withCopy ? hoverCopyButtonHtml('data-copy-input') : ''}</span>`;
 
 /** 기존 SQL 블록의 ⋯ 메뉴(삭제) 단추 — 잠그기 전에만 둡니다. 복사는 편집기·제목칸의 복사 아이콘으로 */

@@ -4,7 +4,7 @@
        [+ 추가] 창(이름 필수 · 이력 선택), 탭 × 로 삭제, [▾ 전체], 등록하지 않은 변경이 있으면 ●
      - 항목 본문: 이름 + 정의 칸(DEF_TABS[탭].info 가 있는 탭만) + 표 여러 개(DEF_TABS[탭].grids, 열은 GRID_COLUMNS)
        + 이력(screen-sqltabs.js itemLogHtml)
-     - 원본 / 신규: 화면에는 지금 고치는 쪽(currentLayer)만 그립니다.
+     - 원본 / 신규: 화면에는 그 탭에서 지금 고치는 쪽(layerOf)만 그립니다. 잠금은 탭마다 따로(screen-lock.js)
          원본 단계 → 원본 항목을 고침 / 신규 단계 → 신규 항목을 고침
          신규 단계의 상태 표시 · 원본과 다른 칸 · 삭제된 항목/줄은 screen-changes.js
      - 등록: 저장 바 [등록] → <dir>/asis.json 또는 <dir>/tobe.json (saveDefItems)
@@ -45,13 +45,13 @@ function defItemBodyHtml(tab, item, {readOnly = false, idBase = item.id} = {}) {
 /** 항목 하나 (고치는 쪽): 이름 + 본문 + 이력 */
 const defItemHtml = (tab, item) => `<div class="blk" data-id="${item.id}">
     <div class="blk-h"><span class="bt-wrap"><input type="text" class="bt def-title" value="${escapeHtml(item.title)}"
-      aria-label="${DEF_TABS[tab].label} 이름" placeholder="이름 입력"></span></div>
+      aria-label="${DEF_TABS[tab].label} 이름" placeholder="이름 입력" ${TITLE_VIEW_ATTRS}></span></div>
     ${defItemBodyHtml(tab, item)}
     ${itemLogHtml('def', tab, item)}
   </div>`;
 
-/** 정의서 탭 하나의 내용: 탭 줄 + 항목들(고른 항목만 보임) + 삭제된 원본 항목 보기(신규 단계) */
-const defPanelHtml = tab => `<div class="panel" data-t="${tab}">${pillTabsBarHtml(tab)}`
+/** 정의서 탭 하나의 내용: 단계 안내 + 탭 줄 + 항목들(고른 항목만 보임) + 삭제된 원본 항목 보기(신규 단계) */
+const defPanelHtml = tab => `<div class="panel" data-t="${tab}">${tabPhaseHtml(tab)}${pillTabsBarHtml(tab)}`
   + `<div id="defs-${tab}" class="blocks">${(app.screen.defItems[tab] || []).map(item => defItemHtml(tab, item)).join('')}</div>`
   + `<div id="gone-${tab}" class="blocks"></div></div>`;
 
@@ -112,11 +112,11 @@ function refreshDefTabMarks(tab) {
   const savedById = new Map((app.screen.savedDefItems[tab] || []).map(item => [item.id, defSignature(tab, item)]));
   const states = [];
   for (const item of readDefInputs(tab)) {
-    const state = isLocked() ? defItemStateOf(tab, item) : '';
+    const state = isTabLocked(tab) ? defItemStateOf(tab, item) : '';
     states.push(state);
     markPillTab(tab, item.id, item.title || UNNAMED_DEF_TITLE, savedById.get(item.id) !== defSignature(tab, item), state);
   }
-  if (isLocked()) renderTabStateSummary(tab, [...states, ...goneDefItems(tab).map(() => 'gone')]);
+  if (isTabLocked(tab)) renderTabStateSummary(tab, [...states, ...goneDefItems(tab).map(() => 'gone')]);
 }
 
 /* ======================= 탭 ======================= */
@@ -132,15 +132,15 @@ function ensureActiveDef(tab) {
 function renderDefTabs(tab) {
   const screen = app.screen;
   const label = DEF_TABS[tab].label;
-  if (isLocked()) renderGoneDefItems(tab);   // 삭제된 원본 항목 보기 (탭 줄보다 먼저 — 고른 탭 확인에 씀)
+  if (isTabLocked(tab)) renderGoneDefItems(tab);   // 삭제된 원본 항목 보기 (탭 줄보다 먼저 — 고른 탭 확인에 씀)
   ensureActiveDef(tab);
   const entries = readDefInputs(tab).map(item => ({id: item.id, title: item.title || UNNAMED_DEF_TITLE}));
-  if (isLocked()) entries.push(...goneDefItems(tab).map(item => goneTabEntry(item.id, item.title || UNNAMED_DEF_TITLE)));
+  if (isTabLocked(tab)) entries.push(...goneDefItems(tab).map(item => goneTabEntry(item.id, item.title || UNNAMED_DEF_TITLE)));
   renderPillTabs(tab, entries, {
     activeId: screen.activeDef[tab],
     removable: true,
     addLabel: `+ ${label} 추가`,
-    emptyText: `아직 ${LAYER_LABELS[currentLayer()]} ${label} 항목이 없습니다. 오른쪽 위 [+ ${label} 추가]로 넣어 주세요.`
+    emptyText: `아직 ${LAYER_LABELS[layerOf(tab)]} ${label} 항목이 없습니다. 오른쪽 위 [+ ${label} 추가]로 넣어 주세요.`
   });
   showActiveDefItem(tab);
   refreshDefTabMarks(tab);
@@ -171,7 +171,7 @@ function activateDefTab(tab, itemId) {
 function askNewDefItem(tab) {
   return new Promise(resolve => {
     const modal = $('#defAddModal'), nameInput = $('#daName'), logInput = $('#daLog'), error = $('#daErr');
-    $('#daTitle').textContent = `${LAYER_LABELS[currentLayer()]} ${DEF_TABS[tab].label} 추가`;
+    $('#daTitle').textContent = `${LAYER_LABELS[layerOf(tab)]} ${DEF_TABS[tab].label} 추가`;
     nameInput.value = '';
     logInput.value = '';
     error.hidden = true;
@@ -226,7 +226,7 @@ async function addDefItem(tab) {
   const log = answer.logText ? [{at: new Date().toISOString(), by: currentWorkerName(), text: answer.logText}] : [];
   const item = {
     id: newId('d'),
-    ...(isLocked() ? {asisId: NO_ASIS_PAIR} : {}),
+    ...(isTabLocked(tab) ? {asisId: NO_ASIS_PAIR} : {}),
     title: answer.title,
     info: {},
     grids: emptyDefGrids(tab),
@@ -274,6 +274,6 @@ async function deleteDefItem(tab, itemId) {
 async function saveDefItems(tab) {
   const screen = app.screen;
   const items = readDefInputs(tab).map(input => ({...input, log: (findDefItem(tab, input.id) || {}).log || []}));
-  await writeJson(screen.dir, defLayerFile(tab, currentLayer()), items.map(storedDefItem));
+  await writeJson(screen.dir, defLayerFile(tab, layerOf(tab)), items.map(storedDefItem));
   screen.savedDefItems[tab] = JSON.parse(JSON.stringify(items));
 }

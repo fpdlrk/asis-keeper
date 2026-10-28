@@ -31,9 +31,9 @@ const FILE_DIRS = {asis: 'asis/files', tobe: 'tobe/files', attach: 'attach'};
 const TOBE_HISTORY_DIR = 'tobe/history';
 
 /* ---- 원본(asis) / 신규(tobe) ----
-   화면마다 잠금이 하나 있습니다(meta.asisLocked).
-     잠그기 전 = 원본 단계: 모든 탭(SQL · 서비스 · 오브젝트 · 공통코드관리)에 원본을 입력
-     잠근 뒤   = 신규 단계: 모든 탭에서 신규를 고치고, 원본과 다른 곳을 표시 (screen-changes.js)
+   원본/신규가 있는 탭(LAYER_TABS: SQL · 서비스 · 오브젝트 · 공통코드관리)마다 잠금이 하나씩 있습니다(meta.tabLocks[탭]).
+     잠그기 전 = 원본 단계: 그 탭에 원본을 입력
+     잠근 뒤   = 신규 단계: 그 탭에서 신규를 고치고, 원본과 다른 곳을 표시 (screen-changes.js)
    잠글 때 아직 신규 쪽에 없는 원본 항목은 신규 쪽으로 복사합니다 (screen-lock.js). */
 const LAYER_LABELS = {asis: '원본', tobe: '신규'};
 
@@ -130,6 +130,11 @@ const LEGACY_DEF_FILES = {
   object: {grid: 'object/overview.json', texts: {attrs: 'object/attributes.md', children: 'object/children.md'}},
   code: {grid: 'code/overview.json', texts: {common: 'code/common.md', system: 'code/system.md'}}
 };
+/* 원본/신규가 있는 탭 (탭마다 원본 잠금이 따로 있음 — screen-data.js tabLocksOf) */
+const LAYER_TABS = ['sql', ...Object.keys(DEF_TABS)];
+/* 예전(화면 하나에 잠금 하나) meta 값 — 읽을 때 탭별 잠금으로 바꾸고, 잠그거나 풀 때 지움 */
+const LEGACY_LOCK_KEYS = ['asisLocked', 'asisSavedAt', 'asisLockedIds', 'hashes', 'asisUnlockLog'];
+
 /* 원본/신규로 나누기 전의 정의서 파일 이름 (<dir>/items.json) — 원본으로 읽음 */
 const LEGACY_DEF_ITEMS_FILE = 'items.json';
 /* 예전 내용을 옮겨 만든 항목의 id·이름 */

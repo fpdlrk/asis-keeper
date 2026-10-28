@@ -127,7 +127,7 @@ function createSavedFileItem(kind, path, seq) {
     + '<span class="st">등록됨</span>';
   if (kind === 'tobe' && inAsis) item.append(createButton({label: '비교', onClick: () => openFileDiffWindow(path, null)}));
   // 기존 파일은 잠겨 있으면 지울 수 없고, 잠금을 푼 동안에만 지울 수 있습니다
-  if (kind !== 'asis' || !app.screen.meta.asisLocked) {
+  if (kind !== 'asis' || !isTabLocked('sql')) {
     item.append(createMenuButton('파일 메뉴', () => [['삭제', () => deleteSavedFile(kind, path), 'danger', MENU_ICON.trash]]));
   }
   if (kind === 'tobe') showFileChangeKind(item.querySelector('[data-kind]'), path, inAsis, seq);

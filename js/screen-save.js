@@ -1,7 +1,7 @@
 /* ==========================================================================
    screen-save.js — 등록과 상태
      - 저장 바의 [등록] / [변경 취소], Ctrl+S
-         등록은 지금 고치는 쪽에 저장: 원본 단계 → 원본(임시 저장, 잠그기 전까지 고칠 수 있음) / 신규 단계 → 신규
+         등록은 탭마다 지금 고치는 쪽에 저장: 원본 단계 → 원본(임시 저장, 잠그기 전까지 고칠 수 있음) / 신규 단계 → 신규
          잠그기 · 잠금 풀기 · 원본 확인은 screen-lock.js
      - 상태 변경 (바로 저장 + 이력 기록)
      - 화면 안의 버튼 이벤트 연결 (initScreen)
@@ -95,7 +95,7 @@ async function saveTobeBlocks() {
 async function saveSection(section) {
   const screen = app.screen;
   if (section === 'sql') {
-    if (isLocked()) {
+    if (isTabLocked('sql')) {
       await saveTobeBlocks();
       await savePendingFiles('tobe');
       await renderTobeHistory();
@@ -119,8 +119,8 @@ async function saveSections(sections) {
   for (const section of sections) await saveSection(section);
 }
 
-/** 등록 대기 파일의 저장 경로 확인 (지금 고치는 쪽 파일 · 첨부). 문제가 없으면 '' */
-const pendingPathError = () => validatePendingPaths(currentLayer()) || validatePendingPaths('attach');
+/** 등록 대기 파일의 저장 경로 확인 (SQL 탭에서 지금 고치는 쪽 파일 · 첨부). 문제가 없으면 '' */
+const pendingPathError = () => validatePendingPaths(layerOf('sql')) || validatePendingPaths('attach');
 
 /**
  * 등록하지 않은 변경이 있는 영역을 모두 등록 (저장 바 [등록] · 잠금 풀기 전)
@@ -148,7 +148,7 @@ async function saveDirtySections() {
 async function saveAllChanges() {
   if (!app.screen) return;
   if (!hasUnsavedChanges()) return toast('등록할 변경이 없습니다.');
-  if (await saveDirtySections()) toast(isLocked() ? '등록했습니다.' : '원본을 등록했습니다. 다 넣었으면 위쪽 [원본 등록 후 잠그기]로 잠가 주세요.');
+  if (await saveDirtySections()) toast('등록했습니다.');
 }
 
 /** 저장 바 [변경 취소]: 등록하지 않은 변경을 버리고 다시 불러옴 */
@@ -198,8 +198,8 @@ function handleScreenClick(e) {
 
   if (button.id === 'btnSaveAll') saveAllChanges();
   else if (button.id === 'btnDiscard') discardChanges();
-  else if (button.id === 'saveAsis') lockOriginal();
-  else if (button.id === 'unlockAsis') unlockAsis();
+  else if (data.lockTab) lockTab(data.lockTab);                  // 탭 위 [원본 등록 후 잠그기]
+  else if (data.unlockTab) unlockTab(data.unlockTab);            // 탭 위 [잠금 풀기]
   else if (data.add) addGridRow(data.add);                       // 표 [+ 행 추가]
   else if (data.del !== undefined) deleteGridRow(button);        // 표 줄 ✕
   else if (data.copyEd) copyEditorText(data.copyEd);             // 편집기 오른쪽 위 복사 아이콘
@@ -253,6 +253,14 @@ function initScreen() {
     refreshIndicators();
   });
   sidePanel.addEventListener('input', refreshIndicators);
+  // 블록 제목칸: 더블클릭 = 고치기 시작, Enter/Esc/다른 곳 클릭 = 마침 (screen-blocks.js)
+  main.addEventListener('dblclick', e => {
+    if (e.target.classList && e.target.classList.contains('bt')) startTitleEdit(e.target);
+  });
+  main.addEventListener('keydown', handleTitleKeydown);
+  main.addEventListener('focusout', e => {
+    if (e.target.classList && e.target.classList.contains('bt')) finishTitleEdit(e.target);
+  });
   // 항목 이력 입력칸(SQL · 정의서): Ctrl+Enter 로 저장 (그냥 Enter 는 줄바꿈)
   main.addEventListener('keydown', e => {
     const itemId = e.target.dataset && e.target.dataset.logInput;

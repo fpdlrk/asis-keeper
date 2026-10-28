@@ -142,11 +142,13 @@ async function findIssues(screens, seq) {
     const statusName = STATUS_LIST[statusIndex];
     const add = (kind, tag, desc) => issues.push({screenInfo, kind, tag, desc});
 
-    if (meta.asisLocked) {
-      if ((await findChangedFiles(dir, meta.hashes, {stopAtFirst: true})).length) add('bad', '원본 변경', 'ASIS 원본이 등록 시점과 다릅니다');
-    } else if (wasAsisUnlocked(meta)) {
-      add('bad', '잠금 해제 중', '원본의 잠금이 풀려 있습니다. 수정을 마쳤으면 다시 잠가 주세요');
-    } else if (statusIndex >= STATUS_DEV) {
+    const reopened = reopenedTabs(meta);
+    if (anyTabLocked(meta) && (await findChangedFiles(dir, lockedHashesOf(meta), {stopAtFirst: true})).length) {
+      add('bad', '원본 변경', '잠근 원본이 등록 시점과 다릅니다');
+    }
+    if (reopened.length) {
+      add('bad', '잠금 해제 중', `${reopened.map(layerTabLabel).join(', ')} 원본의 잠금이 풀려 있습니다. 수정을 마쳤으면 다시 잠가 주세요`);
+    } else if (!anyTabLocked(meta) && statusIndex >= STATUS_DEV) {
       add('warn', '원본 미등록', statusName + ' 상태인데 원본이 잠기지 않았습니다');
     }
     if (statusIndex >= STATUS_DEV) {

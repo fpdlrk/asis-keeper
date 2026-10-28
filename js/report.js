@@ -58,7 +58,7 @@ async function collectScreenReportData(screenInfo) {
   const {dir, meta} = screenInfo;
   const data = {...screenInfo, statusName: statusOf(meta), texts: {}, defs: {}};
   for (const [fieldId, file] of Object.entries(TEXT_FIELD_FILES)) data.texts[fieldId] = await readText(dir, file) || '';
-  for (const tab of Object.keys(DEF_TABS)) data.defs[tab] = await loadDefLayers(dir, tab, !!meta.asisLocked);   // {asis, tobe}
+  for (const tab of Object.keys(DEF_TABS)) data.defs[tab] = await loadDefLayers(dir, tab, isTabLockedIn(meta, tab));   // {asis, tobe}
   data.files = {
     asis: await collectFileInfos(dir, FILE_DIRS.asis),
     tobe: await collectFileInfos(dir, FILE_DIRS.tobe),
@@ -66,7 +66,7 @@ async function collectScreenReportData(screenInfo) {
   };
   data.asisBlocks = await loadSqlBlocks(dir, meta, 'asis');
   data.tobeBlocks = await loadSqlBlocks(dir, meta, 'tobe');
-  data.changedFiles = (await findChangedFiles(dir, meta.hashes)).map(item => item.path);
+  data.changedFiles = (await findChangedFiles(dir, lockedHashesOf(meta))).map(item => item.path);
   return data;
 }
 
@@ -125,13 +125,18 @@ function screenReportHtml(data, index) {
   const section = title => `<h3>${++sectionNo}. ${title}</h3>`;
   const infoRow = (label, valueHtml) => `<tr><th>${label}</th><td>${valueHtml}</td></tr>`;
   // 잠금을 푼 적이 있으면 횟수를 함께 적습니다 (사유 전문은 앱의 '잠금 해제 이력'에만 남김)
-  const unlockCount = (meta.asisUnlockLog || []).length;
-  const integrityState = !meta.asisLocked
-    ? (unlockCount ? '<span class="bad">잠금 해제 상태 (다시 등록되지 않음)</span>' : '<span class="note">원본 미등록</span>')
+  const locks = tabLocksOf(meta);
+  const unlockCount = LAYER_TABS.reduce((sum, tab) => sum + locks[tab].unlockLog.length, 0);
+  const lockedLabels = LAYER_TABS.filter(tab => locks[tab].locked).map(layerTabLabel);
+  const reopened = reopenedTabs(meta).map(layerTabLabel);
+  const integrityState = !lockedLabels.length
+    ? '<span class="note">원본 미등록</span>'
     : data.changedFiles.length
       ? '<span class="bad">변경 감지: ' + escapeHtml(data.changedFiles.join(', ')) + '</span>'
-      : '<span class="ok">등록 시점과 일치 (SHA-256)</span>';
-  const integrity = integrityState + (unlockCount ? ` <span class="note">· 잠금 해제 ${unlockCount}회</span>` : '');
+      : `<span class="ok">등록 시점과 일치 (SHA-256)</span> <span class="note">· 잠근 탭: ${escapeHtml(lockedLabels.join(', '))}</span>`;
+  const integrity = integrityState
+    + (reopened.length ? ` <span class="bad">· 잠금 해제 상태: ${escapeHtml(reopened.join(', '))}</span>` : '')
+    + (unlockCount ? ` <span class="note">· 잠금 해제 ${unlockCount}회</span>` : '');
 
   let html = `<div class="pg" id="p${index}"><div class="ph"><span class="no">${index + 1}</span>`
     + `<div><h2>${escapeHtml(lastOf(data.path))}</h2><p class="pp">${escapeHtml(data.path.join(' / '))}</p></div>`
@@ -190,7 +195,7 @@ function screenReportHtml(data, index) {
   }
 
   // 정의서
-  for (const tab of Object.keys(DEF_TABS)) html += definitionSectionHtml(section, tab, data.defs[tab], !!meta.asisLocked);
+  for (const tab of Object.keys(DEF_TABS)) html += definitionSectionHtml(section, tab, data.defs[tab], isTabLockedIn(meta, tab));
 
   // 참고 파일
   if (data.files.attach.length) {

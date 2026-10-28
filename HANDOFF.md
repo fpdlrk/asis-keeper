@@ -8,6 +8,7 @@
 - 2차 작업(아래 2장): 사용자가 커밋함(`cc883c2`까지)
 - 3차 작업(아래 2-1장 ㉓): **아직 커밋하지 않은 워킹트리 상태** — 커밋은 사용자가 직접 합니다(Claude 는 커밋하지 않음)
 - ⚠ 3차에서 화면 구조가 크게 바뀌었습니다. 2장의 ⑪(기존 SQL 탭 · 신규 SQL 탭), ⑮(`items.json`), ⑳(잠긴 기존 SQL 칸 잠금 전환) 설명은 **㉓가 우선**합니다.
+- ⚠ ㉓의 '화면 하나에 잠금 하나'는 **㉕(탭 단위 잠금)로 바뀌었습니다.** 잠금 관련은 ㉕가 우선합니다.
 - 실행: `index.html`을 **Chrome 또는 Edge로** 엽니다(더블클릭). 서버·빌드·설치 없음
 
 ---
@@ -435,6 +436,31 @@ grep -rn "지운이름" js/ index.html
 - 정의서는 지금 고치는 쪽만 그림. 원본은 `app.screen.asisDefItems[탭]`
 - 단계 안내 띠는 탭 위(`.phase`, `phaseBannerHtml`) — 모든 탭에서 보임
 
+### ㉕ 원본 잠금을 탭 단위로 (화면 하나에 잠금 하나 → 탭마다 하나)
+
+**배경(사용자 요청)**: 화면 하나에 잠금 하나면, 한 탭의 원본을 나중에 넣으려 해도 화면 전체 잠금을 풀어야 해서 번거로움.
+항목 단위 / 탭 단위 / 원본 추가만 허용 세 가지 중 **탭 단위**로 결정(항목 단위는 과하다는 판단).
+
+- 잠금 정보: `meta.tabLocks[탭] = {locked, savedAt, lockedIds, hashes, unlockLog}` (탭 = `LAYER_TABS`: sql · service · object · code)
+  - 읽기는 늘 `tabLocksOf(meta)`(`screen-data.js`) — `meta.tabLocks`가 없으면 예전 값(`LEGACY_LOCK_KEYS`)에서 만듦:
+    잠금 · 처음 잠근 시각은 모든 탭 같게, 해시는 경로로 나눔(정의서 폴더 아래 → 그 탭, 나머지 → SQL), 해제 이력은 SQL 탭으로
+  - 쓰기는 `setTabLock(meta, tab, lock)` — 이때 예전 값(`asisLocked` 등)을 지움
+  - 도우미: `isTabLockedIn` `anyTabLocked` `reopenedTabs` `lockedHashesOf` `layerTabLabel`
+- 화면: `isTabLocked(tab)` · `layerOf(tab)`(예전 `isLocked()` · `currentLayer()` 대체). 안내 띠는 각 탭 맨 위(`tabPhaseHtml`), 단추는 `data-lock-tab` / `data-unlock-tab`
+  - `lockTab(tab)`: 다른 영역의 바뀐 내용 등록 → 그 탭 원본 저장(`saveOriginalOf`) → 그 탭만 복사(`copyNewOriginalsToTobe(dir, meta, tab, lock)`) → 그 탭 해시(`hashOriginalOf`) → 화면 다시 그림
+  - `unlockTab(tab)`: 사유 → 그 탭 `unlockLog`에 추가 → 화면 다시 그림
+  - 잠긴 탭은 화면 탭 이름 옆에 자물쇠(`.tab-lk`). 저장 바에 원본 단계 탭은 `서비스(원본)`처럼 표시
+  - 원본 확인(`verifyIntegrity`): 잠긴 탭들의 해시를 합쳐 확인 + '잠금 해제 중: 탭이름' 꼬리표
+  - 비교 탭: 원본을 잠근 탭만 비교, 원본 단계인 탭은 이름만 알림. 보고서 · 현황도 탭별 잠금 기준
+- 삭제: `isLocked` `currentLayer` `wasAsisUnlocked` `lockOriginal` `unlockAsis` `hashOriginal` `originalItemIds` (`#saveAsis` · `#unlockAsis` 단추 id 도 없음)
+
+### ㉔ 블록 제목칸 — 더블클릭해야 고침
+
+**배경(사용자 요청)**: 제목을 한 번 클릭으로 바로 고치지 말고 더블클릭으로 수정 모드가 되게.
+- 대상: 블록 제목칸 `.bt` 전부 (SQL 제목 · 정의서 항목 이름). 평소 `readonly` + 안내 툴팁(`TITLE_EDIT_HINT`), 잠긴 원본은 예전처럼 `disabled`
+- `screen-blocks.js`: `startTitleEdit`(더블클릭) · `finishTitleEdit`(Enter · 다른 곳 클릭 = 마침, Esc = 고치기 전 이름으로) · `handleTitleKeydown`. 연결은 `initScreen`(dblclick · keydown · focusout)
+- 이름이 원본과 다를 때의 툴팁(`applyTitleMark`)에 더블클릭 안내를 함께 붙임
+
 ---
 
 ## 3. 새로 생긴 전역 심볼 (이름 충돌 주의)
@@ -501,7 +527,10 @@ grep -rn "지운이름" js/ index.html
 | `screen-defs.js` | `findDefItem` `defItemBodyHtml` `insertDefItem` |
 | `screen-sqltabs.js` | `pillStateText` `sqlTabElements` |
 | `screen-save.js` | `saveAsisBlocks` `saveSections` `pendingPathError` `saveDirtySections` · **삭제**: `LOCKED_SAVE_MESSAGE` `hashAsisFiles` `registerAsis` `setAsisEditorsReadOnly` `showAsisAsLocked` `showAsisAsUnlocked` |
-| `screen-blocks.js` | **삭제**: `setAsisDefinitionReadOnly` |
+| `constants.js` (㉕) | `LAYER_TABS` `LEGACY_LOCK_KEYS` |
+| `screen-data.js` (㉕) | `layerTabLabel` `emptyTabLock` `tabLocksOf` `isTabLockedIn` `anyTabLocked` `reopenedTabs` `lockedHashesOf` `setTabLock` |
+| `screen-lock.js` (㉕, 다시 씀) | `isTabLocked` `layerOf` `tabPhaseHtml` `saveOriginalOf` `hashOriginalOf` `originalIdsOf` `lockTab` `unlockTab` · **삭제**: `isLocked` `currentLayer` `wasAsisUnlocked` `lockOriginal` `unlockAsis` `hashOriginal` `originalItemIds` |
+| `screen-blocks.js` | `TITLE_EDIT_HINT` `TITLE_VIEW_ATTRS` `startTitleEdit` `finishTitleEdit` `handleTitleKeydown` (㉔) · **삭제**: `setAsisDefinitionReadOnly` |
 | `diff.js` | `STATE_TAG_CLASS` `compareItemRowHtml` `defDiffDetail` `sqlDefinitionDiffDetail` `defCompareHtml` |
 | `report.js` | `reportInfoTableHtml` `reportGridTableHtml` `sqlDefinitionReportHtml` |
 
@@ -542,6 +571,16 @@ grep -rn "지운이름" js/ index.html
 ```
 - 파일이 없으면 예전 파일을 '기본'(id `legacy`) 항목으로 옮겨 보여 줌 / `[]`이면 항목 없음(예전 파일을 다시 옮기지 않음)
 
+**㉕(탭 단위 잠금)** — 아래 ㉓의 `asisLocked` · `asisSavedAt` · `asisLockedIds` · `hashes` · `asisUnlockLog` 는 처음 잠그거나 풀 때 이 모양으로 바뀌고 지워짐
+
+```jsonc
+"tabLocks": {
+  "sql":     { "locked": true,  "savedAt": "…", "lockedIds": ["b…"], "hashes": { "asis/sql/b1.sql": "…", "meta.json#sqlBlocks.asis": "…" }, "unlockLog": [] },
+  "service": { "locked": false, "savedAt": "",  "lockedIds": null,   "hashes": {}, "unlockLog": [] },   // lockedIds null = 한 번도 안 잠금
+  "object":  { … }, "code": { … }
+}
+```
+
 **3차(㉓)에서 더해진 것**
 
 ```jsonc
@@ -568,10 +607,18 @@ grep -rn "지운이름" js/ index.html
 
 ## 5. 확인이 필요한 것 (브라우저에서 직접)
 
-### 3차 (㉓) — 아직 확인 안 함 (가장 먼저 볼 것)
+### 탭 단위 잠금 (㉕) — 아직 확인 안 함
+
+- [ ] **탭마다 따로** — SQL 만 잠그고 서비스는 원본 단계인 상태: 각 탭 위 안내 띠가 다르게 나오는지, 잠긴 탭 이름 옆 자물쇠, 저장 바에 `서비스(원본)`
+- [ ] **한 탭 잠그기 · 풀기** — 다른 탭의 입력 중 내용이 먼저 등록되고 사라지지 않는지, 그 탭만 신규로 복사되는지, 풀기 사유가 그 탭 이력에만 남는지
+- [ ] **예전 데이터** — ㉓ 때 잠근 화면(또는 그 전 데이터)이 모든 탭 잠긴 상태로 열리는지, 원본 일치 표시, 한 탭을 풀면 나머지는 그대로인지
+- [ ] **비교 탭 · 보고서 · 현황** — 잠근 탭만 비교, '원본 단계라 비교에서 뺀 탭' 안내, 보고서의 '잠근 탭', 현황의 '잠금 해제 중: 탭이름'
+
+### 3차 (㉓) — 확인 중 (2026-10-28 사용자: 전반적으로 잘 동작. 아래 항목별 확인은 아직)
 
 문법 · 전역 이름 충돌 · 정의되지 않은 함수 호출 검사, node 로 비교 계산 · 잠글 때 복사 · 해시 · 위변조 감지까지 확인했습니다. 화면은 **눌러 봐야 압니다.**
 
+- [x] **제목 더블클릭(㉔)** (2026-10-28 사용자 확인: "동작은 잘되고있어") — 한 번 클릭은 안 고쳐지고, 더블클릭하면 입력칸 모양 + 전체 선택, Enter/다른 곳 클릭으로 마침, Esc 로 되돌림(● 도 사라짐), SQL 제목 대문자 변환, 한글 입력
 - [ ] **원본 단계** — 새 화면: 안내 띠 · SQL/서비스/오브젝트/공통코드관리에 원본 입력 → [등록](원본 임시 저장, ●가 사라짐) → 다시 열어도 남는지
 - [ ] **잠그기** — [원본 등록 후 잠그기] → 화면이 신규 단계로 다시 그려지고, 모든 탭에 원본이 복사되어 있는지(● 없음, 상태 표시 없음 = 동일). 원본 일치 표시
 - [ ] **신규 단계 표시** — 정의 칸을 고치면 노랑 + '원본: 값', 표 칸을 고치면 노랑(마우스 올리면 원본), 줄 추가 초록, 줄 삭제 → 표 아래 '삭제된 줄 n' → [되살리기]
@@ -664,10 +711,13 @@ grep -rn "지운이름" js/ index.html
 
 ## 7. 변경된 파일
 
-### 3차 (아직 커밋 안 함)
+### 3차 (아직 커밋 안 함 — ㉓ · ㉔ · ㉕)
 
 ```
-신규:  js/layer-diff.js, js/screen-changes.js, js/screen-lock.js
+㉕ 수정: js/constants.js  js/screen-data.js  js/screen-lock.js(다시 씀)  js/screen.js  js/screen-defs.js  js/screen-sqltabs.js
+        js/screen-save.js  js/screen-changes.js  js/screen-files.js  js/diff.js  js/report.js  js/dashboard.js  js/tree.js
+        css/app.css  README.md  HANDOFF.md
+㉓ 신규:  js/layer-diff.js, js/screen-changes.js, js/screen-lock.js
 수정:  index.html (스크립트 3개 · 문구), README.md, HANDOFF.md, css/app.css,
        js/constants.js  js/utils.js  js/state.js  js/screen-data.js
        js/screen.js  js/screen-blocks.js  js/screen-sqltabs.js  js/screen-defs.js(다시 씀)  js/screen-grid.js

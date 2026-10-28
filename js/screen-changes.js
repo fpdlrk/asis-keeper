@@ -1,6 +1,6 @@
 /* ==========================================================================
    screen-changes.js — 신규 단계: 원본과 다른 곳을 한 화면에 표시
-     잠근 뒤(신규 단계)에만 동작합니다. 원본 단계에는 비교할 원본이 아직 확정되지 않아 표시하지 않습니다.
+     원본을 잠근 탭(신규 단계)에서만 동작합니다. 원본 단계에는 비교할 원본이 아직 확정되지 않아 표시하지 않습니다.
 
      - 탭 줄: 항목마다 상태(변경 · 신규 · 삭제됨) + 오른쪽에 '변경 n · 신규 n · 삭제 n' 요약
      - 정의 칸: 원본과 다른 칸은 노란 배경 + 칸 아래에 '원본: 값'
@@ -157,11 +157,12 @@ function applyInfoMarks(container, originalInfo) {
   });
 }
 
-/** 이름칸 표시: 원본과 이름이 다르면 노란 배경 + 마우스를 올리면 원본 이름 */
+/** 이름칸 표시: 원본과 이름이 다르면 노란 배경 + 마우스를 올리면 원본 이름 (고치는 중이 아니면 더블클릭 안내도) */
 function applyTitleMark(input, originalTitle) {
   const changed = originalTitle !== null && comparableValue(originalTitle) !== comparableValue(input.value);
   input.classList.toggle('info-chg', changed);
-  input.title = changed ? '원본 이름: ' + originalTitle : '';
+  const hint = input.readOnly ? TITLE_EDIT_HINT : '';
+  input.title = changed ? `원본 이름: ${originalTitle}${hint ? ' · ' + hint : ''}` : hint;
 }
 
 /**
@@ -223,14 +224,13 @@ function scheduleChangeMarks() {
 }
 
 /**
- * 지금 보이는 항목의 칸 표시 다시 계산 (신규 단계에서만)
+ * 지금 보이는 항목의 칸 표시 다시 계산 (그 탭이 신규 단계일 때만)
  *   SQL 탭이면 고른 신규 블록, 정의서 탭이면 고른 항목 — 보이지 않는 항목은 탭을 고를 때 계산
  */
 function refreshChangeMarks() {
-  const screen = app.screen;
-  if (!screen || !isLocked()) return;
+  if (!app.screen || !LAYER_TABS.includes(app.tab) || !isTabLocked(app.tab)) return;
   if (app.tab === 'sql') markActiveSqlBlock();
-  else if (app.tab in DEF_TABS) markActiveDefItem(app.tab);
+  else markActiveDefItem(app.tab);
 }
 
 /** 고른 SQL 신규 블록의 정의 칸 · 파라미터 표 표시 */

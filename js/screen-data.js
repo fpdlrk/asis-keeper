@@ -106,6 +106,60 @@ async function findChangedFiles(dir, hashes, {stopAtFirst = false} = {}) {
   return changed;
 }
 
+/* ======================= 탭별 원본 잠금 =======================
+   meta.tabLocks = {탭: {locked, savedAt, lockedIds, hashes, unlockLog}}  (탭 = LAYER_TABS)
+     locked    : 잠겼는지 (= 그 탭이 신규 단계인지)
+     savedAt   : 처음 잠근 시각 (다시 잠가도 그대로)
+     lockedIds : 지난번 잠글 때의 원본 항목 id (다시 잠글 때 '새로 넣은 원본'만 신규로 복사). 한 번도 안 잠갔으면 null
+     hashes    : 그 탭 원본의 해시 {경로 또는 META_HASH_TARGETS 키: 해시}
+     unlockLog : 잠금 해제 이력 [{at, by, reason, relockedAt}] */
+
+/** 탭 이름 (안내 · 현황 · 보고서) */
+const layerTabLabel = tab => (tab === 'sql' ? 'SQL' : DEF_TABS[tab].label);
+
+/** 잠그지 않은 탭의 잠금 정보 */
+const emptyTabLock = () => ({locked: false, savedAt: '', lockedIds: null, hashes: {}, unlockLog: []});
+
+/**
+ * 화면의 탭별 잠금 정보 (언제나 LAYER_TABS 가 모두 들어 있음)
+ * meta.tabLocks 가 없으면 예전 값(화면 하나에 잠금 하나 — LEGACY_LOCK_KEYS)으로 만듭니다:
+ *   잠금 · 처음 잠근 시각은 모든 탭이 같게, 해시는 경로로 나눔(정의서 폴더 아래는 그 탭, 나머지는 SQL),
+ *   해제 이력은 SQL 탭으로 (예전 잠금은 SQL 원본을 위한 것이었음)
+ */
+function tabLocksOf(meta) {
+  if (meta.tabLocks) return Object.fromEntries(LAYER_TABS.map(tab => [tab, {...emptyTabLock(), ...(meta.tabLocks[tab] || {})}]));
+  const defTabOfPath = path => Object.keys(DEF_TABS).find(tab => path.startsWith(DEF_TABS[tab].dir + '/')) || 'sql';
+  const hashEntries = Object.entries(meta.hashes || {});
+  return Object.fromEntries(LAYER_TABS.map(tab => [tab, {
+    locked: !!meta.asisLocked,
+    savedAt: meta.asisSavedAt || '',
+    lockedIds: meta.asisLockedIds ? meta.asisLockedIds[tab] || [] : null,
+    hashes: Object.fromEntries(hashEntries.filter(([path]) => defTabOfPath(path) === tab)),
+    unlockLog: tab === 'sql' ? meta.asisUnlockLog || [] : []
+  }]));
+}
+
+/** 탭이 잠겼는지 */
+const isTabLockedIn = (meta, tab) => tabLocksOf(meta)[tab].locked;
+
+/** 잠긴 탭이 하나라도 있는지 */
+const anyTabLocked = meta => LAYER_TABS.some(tab => isTabLockedIn(meta, tab));
+
+/** 잠금을 풀어 둔 채인 탭 (해제 이력이 있는데 지금 안 잠김) */
+const reopenedTabs = meta => {
+  const locks = tabLocksOf(meta);
+  return LAYER_TABS.filter(tab => !locks[tab].locked && locks[tab].unlockLog.length > 0);
+};
+
+/** 잠긴 탭들의 원본 해시를 하나로 (원본 확인 · 현황 · 보고서) */
+const lockedHashesOf = meta => Object.assign({}, ...Object.values(tabLocksOf(meta)).filter(lock => lock.locked).map(lock => lock.hashes));
+
+/** 탭 하나의 잠금 정보 저장 (meta 만 바꿈 — saveMeta 는 부르는 쪽에서). 예전 값은 이때 지움 */
+function setTabLock(meta, tab, lock) {
+  meta.tabLocks = {...tabLocksOf(meta), [tab]: lock};
+  for (const key of LEGACY_LOCK_KEYS) delete meta[key];
+}
+
 /** META_HASH_TARGETS 의 값을 해시용 Blob 으로 (잠글 때와 확인할 때 같은 방식) */
 const metaHashBlob = (key, meta) => new Blob([JSON.stringify(META_HASH_TARGETS[key](meta))], {type: 'application/json'});
 
@@ -208,7 +262,7 @@ const copyDefItemAsTobe = item => ({...JSON.parse(JSON.stringify(item)), id: new
  * 정의서 탭의 원본 · 신규 항목 읽기 (화면 · 보고서 · 잠그기가 함께 씀)
  *   원본: asis.json → 없으면 예전 items.json → 그것도 없으면 더 예전 파일(글 입력란 · 개요 표)을 '기본' 항목으로
  *   신규: tobe.json → 없으면 잠긴 화면은 원본을 복사해 시작(아직 신규 작업 전), 잠그기 전이면 빈 목록
- * @param {boolean} locked 원본이 잠겼는지 (meta.asisLocked)
+ * @param {boolean} locked 그 탭의 원본이 잠겼는지 (isTabLockedIn)
  * @returns {Promise<{asis: object[], tobe: object[]}>}
  */
 async function loadDefLayers(dir, tab, locked) {

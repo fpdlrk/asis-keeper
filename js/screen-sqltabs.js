@@ -4,7 +4,7 @@
          탭 줄 id = 'asis' | 'tobe' (SQL 원본 · 신규, 이 파일) | 'service' | 'object' | 'code' (정의서, screen-defs.js)
          탭이 넘치면: 스크롤바는 숨기고(UI 가 틀어지지 않게) 양 끝에 ‹ › 단추 + 가려진 쪽을 흐리게 표시.
          마우스 휠(가로로 움직임) · 탭 줄을 끌기 · [▾ 전체] 목록으로도 이동합니다.
-         신규 단계에서는 탭마다 원본 대비 상태(변경 · 신규 · 삭제됨)와 탭 줄 오른쪽 요약을 붙입니다 (screen-changes.js)
+         신규 단계에서는 탭마다 원본 대비 상태(신규 N · 삭제됨 — '변경'은 붙이지 않음)와 탭 줄 오른쪽 요약을 붙입니다 (screen-changes.js)
          '삭제됨' 탭 = 원본에만 있는 항목 (id 앞에 GONE_TAB_PREFIX, × 없음, 누르면 읽기 전용 보기)
      - SQL 탭: 고른 탭의 SQL 블록만 보이고 나머지는 숨깁니다.
        블록은 모두 화면에 그대로 있으므로 등록·비교 탭·보고서는 예전처럼 화면 순서대로 읽습니다.
@@ -36,8 +36,12 @@ const pillTabsBarHtml = barId => `<div class="sqltabs"><div class="pilltabs-scro
 /* 신규(원본 없음) 항목은 글자 대신 빨간 동그라미 안의 'N' 으로 표시 (CSS .sqltab[data-st="new"] .sqltab-st) */
 const NEW_BADGE_TEXT = 'N';
 
-/** 원본 대비 상태 글 (탭 이름 뒤) — 동일이면 비움, 신규는 N 표시 */
-const pillStateText = state => (state === 'new' ? NEW_BADGE_TEXT : state && state !== 'same' ? ITEM_STATE_LABELS[state] : '');
+/**
+ * 원본 대비 상태 글 (탭 이름 뒤) — 신규는 N 표시, 삭제된 원본 탭은 '삭제됨'
+ * '변경'은 붙이지 않음: N 이 없으면 원본에서 온 항목(변경 또는 그대로)이라 따로 표시할 필요가 없음 (사용자 요청)
+ * 바뀐 곳은 본문의 칸 색 · 탭 줄 오른쪽 요약('변경 n')으로 보임
+ */
+const pillStateText = state => (state === 'new' ? NEW_BADGE_TEXT : state === 'gone' ? ITEM_STATE_LABELS.gone : '');
 
 /**
  * 탭 하나: [● 이름 상태] [×]
@@ -358,7 +362,7 @@ function askNewSqlBlock(kind) {
 
     const finish = result => {
       modal.hidden = true;
-      $('#saOk').onclick = $('#saCancel').onclick = nameInput.oninput = nameInput.onkeydown = modal.onkeydown = null;
+      $('#saOk').onclick = $('#saCancel').onclick = nameInput.oninput = nameInput.oncompositionend = nameInput.onkeydown = modal.onkeydown = null;
       closeActiveDialog = null;
       resolve(result);
     };
@@ -369,7 +373,7 @@ function askNewSqlBlock(kind) {
     };
     // 확인: 이름·SQL 은 필수. 빠졌으면 창을 닫지 않고 알려 줌
     const submit = () => {
-      const title = toBlockTitle(nameInput.value.trim());
+      const title = toAddItemName(nameInput.value.trim());
       const sql = editor.getValue();
       if (!title) return showError('이름을 입력해 주세요.', nameInput);
       if (!sql.trim()) return showError('SQL을 입력해 주세요.', editor);
@@ -384,7 +388,7 @@ function askNewSqlBlock(kind) {
 
     $('#saOk').onclick = submit;
     $('#saCancel').onclick = () => finish(null);
-    nameInput.oninput = () => forceUpperCaseTitle(nameInput);   // 이름은 본문 제목칸과 같은 규칙(대문자)
+    bindAddNameInput(nameInput, error);   // 이름은 영문 · 숫자 · _ 만, 대문자로
     nameInput.onkeydown = e => {
       if (e.key === 'Enter') { e.preventDefault(); editor.focus(); }
     };
@@ -432,9 +436,11 @@ function logItemsHtml(scope, item) {
   const screenEntries = hasScreenLog(scope) && app.screen ? screenLogEntries(app.screen.meta) : [];
   const entries = [...(item.log || []), ...screenEntries].sort((a, b) => String(b.at).localeCompare(String(a.at)));
   if (!entries.length) return '<li class="muted">아직 남긴 이력이 없습니다.</li>';
+  // 자동 기록(시스템)은 문장으로 보여 줌 — 사용자가 쓴 글은 그대로
+  const textOf = entry => (logSourceOf(entry) === 'user' ? entry.text : logSentenceOf(entry.text));
   return entries.map(entry => `<li class="src-${logSourceOf(entry)}" title="${escapeHtml(`${formatDateTime(entry.at)} · ${entry.by || '-'}`)}">`
     + logSourceTagHtml(entry)
-    + `<span class="wl-t">${escapeHtml(entry.text)} <span class="wl-d">${escapeHtml(formatDay(entry.at))}</span></span></li>`).join('');
+    + `<span class="wl-t">${escapeHtml(textOf(entry))} <span class="wl-d">${escapeHtml(formatDay(entry.at))}</span></span></li>`).join('');
 }
 
 /** 화면에 있는 그 항목의 이력 목록을 다시 그림 (이력을 남긴 뒤 · 등록 뒤) */

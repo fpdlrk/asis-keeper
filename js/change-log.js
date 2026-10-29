@@ -30,10 +30,50 @@ const logSourceOf = entry => (entry.source === 'system' || entry.source === 'scr
  * 모두 출처 'screen' — 항목 이력 목록의 [화면] (파일에 저장된 값은 그대로, 보여 줄 때만 바꿈)
  */
 function screenLogEntries(meta) {
-  const statusEntries = (meta.statusLog || []).map(entry =>
-    ({at: entry.at, by: entry.by || meta.worker || '', text: `상태: ${normalizeStatus(entry.status)}`, source: 'screen'}));
-  const activityEntries = (meta.activityLog || []).map(entry => ({...entry, source: 'screen'}));
-  return [...statusEntries, ...activityEntries, ...legacyUnlockEntries(meta)];
+  const statusEntries = (meta.statusLog || []).map((entry, i) =>
+    ({at: entry.at, by: entry.by || meta.worker || '', text: statusLogText(normalizeStatus(entry.status), i === 0), source: 'screen'}));
+  // '신규 화면으로 만듦'은 신규 화면의 항목마다 [시스템] 첫 이력으로 이미 있어 [화면]으로는 다시 보이지 않음 (같은 글이 두 줄로 나오지 않게)
+  const activityEntries = (meta.activityLog || []).filter(entry => entry.text !== NEW_SCREEN_LOG_TEXT).map(entry => ({...entry, source: 'screen'}));
+  // 저장된 글은 짧은 모양 그대로 두고(잠금 기록 중복 정리 등이 그 글을 씀) 보여 줄 때만 문장으로
+  return [...statusEntries, ...[...activityEntries, ...legacyUnlockEntries(meta)].map(entry => ({...entry, text: logSentenceOf(entry.text)}))];
+}
+
+/*
+ * 자동 기록(시스템 · 화면)의 짧은 글 → 문장 (보여 줄 때만 — 예전 기록도 문장으로 보임). 위에서부터 처음 맞는 것
+ * 글을 새로 만드는 곳: screen-lock.js(잠금 · 잠금 풀기) · screen-save.js · screen-defs.js · screen-entity.js(삭제) · tree.js(신규 화면 · 복사)
+ */
+const LOG_SENTENCES = [
+  [/^(.+) 원본 다시 잠금$/, (_, label) => `${label} 원본을 다시 잠갔습니다.`],
+  [/^(.+) 원본 잠금$/, (_, label) => `${label} 원본을 등록하고 잠갔습니다.`],
+  [/^(.+) 잠금 풀기 \(사유: ([\s\S]*)\)$/, (_, label, reason) => `${label} 잠금을 풀었습니다. (사유: ${reason})`],
+  [/^(.+) ‘([^’]*)’ 삭제$/, (_, what, title) => `${what} ‘${title}’ 항목을 삭제했습니다.`],
+  [/^‘([^’]*)’( \(티켓 [^)]*\))?에서 복사해 만듦$/, (_, path, ticket) => `‘${path}’${ticket || ''}에서 복사해 만들었습니다.`],
+  [new RegExp('^' + NEW_SCREEN_LOG_TEXT.replace(/[()]/g, '\\$&') + '$'), () => '원본 없이 신규 화면으로 만들었습니다.']
+];
+
+/** 자동 기록 글을 문장으로 (맞는 모양이 없으면 그대로) */
+function logSentenceOf(text) {
+  for (const [pattern, toSentence] of LOG_SENTENCES) {
+    const match = String(text).match(pattern);
+    if (match) return toSentence(...match);
+  }
+  return text;
+}
+
+/**
+ * 상태 이력 글 — 문장으로: '상태가 개발로 변경되었습니다.' (첫 기록은 화면을 만들 때 정한 상태라 '지정되었습니다')
+ * 저장된 값은 상태 이름뿐이라 보여 줄 때만 글로 만듦 (예전 기록에도 그대로 적용)
+ */
+function statusLogText(statusName, isFirst) {
+  return `상태가 ${statusName}${roParticleOf(statusName)} ${isFirst ? '지정' : '변경'}되었습니다.`;
+}
+
+/** 조사 '(으)로': 받침이 없거나 ㄹ 받침이면 '로', 그 밖의 받침이면 '으로' (예: 개발로 · 운영으로 · 요청으로) */
+function roParticleOf(word) {
+  const code = String(word).charCodeAt(String(word).length - 1) - 0xAC00;
+  if (code < 0 || code > 11171) return '(으)로';   // 한글이 아니면 둘 다 적음
+  const finalConsonant = code % 28;
+  return finalConsonant === 0 || finalConsonant === 8 ? '로' : '으로';   // 8 = ㄹ
 }
 
 /**
@@ -49,11 +89,22 @@ function legacyUnlockEntries(meta) {
     for (const unlock of locks[tab].unlockLog) {
       if (activityTexts.has(`${label} 잠금 풀기 (사유: ${unlock.reason})`)) continue;
       entries.push({at: unlock.at, by: unlock.by || '', text: `${label} 잠금 풀기 (사유: ${unlock.reason || ''})`, source: 'screen'});
-      if (unlock.relockedAt) entries.push({at: unlock.relockedAt, by: '', text: `${label} 원본 다시 잠금`, source: 'screen'});
+      // 자동 기록 전에 풀고 그 뒤에 다시 잠갔으면 '다시 잠금'은 activityLog 에 이미 있음 → 두 번 보이지 않게 뺌
+      const relockText = `${label} 원본 다시 잠금`;
+      if (unlock.relockedAt && !hasActivityNear(meta, relockText, unlock.relockedAt)) {
+        entries.push({at: unlock.relockedAt, by: '', text: relockText, source: 'screen'});
+      }
     }
   }
   return entries;
 }
+
+/* 잠금 정보의 '다시 잠근 시각'과 화면 이력의 '다시 잠금' 시각은 같은 작업에서 따로 찍혀 조금 다름 — 이 차이(ms) 안이면 같은 일로 봄 */
+const RELOCK_LOG_MATCH_MS = 60 * 1000;
+
+/** 화면 이력(activityLog)에 그 시각 무렵 같은 글이 있는지 */
+const hasActivityNear = (meta, text, at) => (meta.activityLog || [])
+  .some(entry => entry.text === text && Math.abs(Date.parse(entry.at) - Date.parse(at)) <= RELOCK_LOG_MATCH_MS);
 
 /** 시스템 이력 한 줄 */
 const systemLogEntry = text => ({at: new Date().toISOString(), by: currentWorkerName(), text, source: 'system'});

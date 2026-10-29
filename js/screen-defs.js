@@ -198,12 +198,12 @@ function askNewDefItem(tab) {
 
     const finish = result => {
       modal.hidden = true;
-      $('#daOk').onclick = $('#daCancel').onclick = nameInput.onkeydown = modal.onkeydown = null;
+      $('#daOk').onclick = $('#daCancel').onclick = nameInput.oninput = nameInput.oncompositionend = nameInput.onkeydown = modal.onkeydown = null;
       closeActiveDialog = null;
       resolve(result);
     };
     const submit = () => {
-      const title = nameInput.value.trim();
+      const title = toAddItemName(nameInput.value.trim());
       const picked = $('#daChoices input:checked');
       const showError = (message, target) => {
         error.textContent = message;
@@ -217,6 +217,7 @@ function askNewDefItem(tab) {
 
     $('#daOk').onclick = submit;
     $('#daCancel').onclick = () => finish(null);
+    bindAddNameInput(nameInput, error);   // 이름은 영문 · 숫자 · _ 만, 대문자로 (SQL 추가 창과 같은 규칙)
     nameInput.onkeydown = e => {
       if (e.key === 'Enter') { e.preventDefault(); submit(); }
     };

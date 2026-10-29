@@ -70,8 +70,30 @@ function leadingCommentTitle(sql) {
    단어 사이 공백('SELECT A')은 지우면 뜻이 바뀌므로 한 칸으로만 줄임. 한글도 글자로 봄(u 플래그 \p{L}) */
 const SPACE_AROUND_SYMBOL = /\s*([^\p{L}\p{N}_\s])\s*/gu;
 
-/** 공백 · 대소문자 차이를 없앤 값: 공백을 한 칸으로 → 기호 앞뒤 공백 제거 → 앞뒤 공백 제거 → 소문자 */
-const formatInsensitiveValue = text => String(text).replace(/\s+/g, ' ').replace(SPACE_AROUND_SYMBOL, '$1').trim().toLowerCase();
+/* 주석(-- 줄 주석 · 블록 주석)과 따옴표로 묶은 글(문자열 '…' · 이름 "…"). 따옴표 안은 공백 · 대소문자도 뜻이므로 그대로 비교합니다.
+   주석을 먼저 찾는 것은 주석 안의 따옴표(예: -- don't)를 문자열 시작으로 잘못 보지 않기 위함 (주석은 다른 코드처럼 무시해 비교).
+   '' 는 문자열 안의 따옴표. 닫는 따옴표가 없으면(줄 단위 비교에서 여러 줄 문자열) 끝까지 문자열로 봄 */
+const SQL_QUOTED_OR_COMMENT = /(--[^\n]*|\/\*[\s\S]*?(?:\*\/|$))|('(?:[^']|'')*(?:'|$)|"(?:[^"]|"")*(?:"|$))/g;
+
+/** 따옴표 밖의 코드: 공백을 한 칸으로 → 기호 앞뒤 공백 제거 → 앞뒤 공백 제거(따옴표도 기호이므로) → 소문자 */
+const normalizeSqlCode = code => code.replace(/\s+/g, ' ').replace(SPACE_AROUND_SYMBOL, '$1').trim().toLowerCase();
+
+/**
+ * 공백 · 대소문자 차이를 없앤 값 — 따옴표 밖만 바꾸고, 따옴표 안('a , b', 'Y')은 그대로 둠
+ * 예: "WHERE NM = 'a , b'" → "where nm='a , b'"
+ */
+function formatInsensitiveValue(text) {
+  const value = String(text);
+  const parts = [];   // 따옴표 밖(바꿈) · 안(그대로)을 번갈아
+  let last = 0;
+  for (const match of value.matchAll(SQL_QUOTED_OR_COMMENT)) {
+    if (!match[2]) continue;   // 주석 — 따옴표 밖 코드와 함께 처리
+    parts.push(normalizeSqlCode(value.slice(last, match.index)), match[2]);
+    last = match.index + match[0].length;
+  }
+  parts.push(normalizeSqlCode(value.slice(last)));
+  return parts.join('');
+}
 
 /** 줄 비교용 값 (한 줄 안의 공백 · 대소문자 차이 무시) */
 const formatInsensitiveLine = line => formatInsensitiveValue(line);

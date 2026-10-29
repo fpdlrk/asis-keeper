@@ -13,7 +13,7 @@ const treeState = {
   renderSeq: 0,           // 그리기 순번: 그리는 도중 다시 그리기가 시작되면 이전 결과는 버림
   searchTimer: null       // 검색어 입력 후 잠깐 기다렸다 그리기 위한 타이머
 };
-/* 메뉴 이동 창 상태: {target: 옮길 폴더, destination: 고른 위치} */
+/* 이동 · 복사 창 상태: {target: 옮길 폴더, destination: 고른 위치} */
 let moveState = null;
 
 /** 검색 중이거나 상태 필터가 걸려 있는지 (이때는 접힌 폴더도 모두 펼쳐 보여 줌) */
@@ -50,6 +50,7 @@ async function setRootFolder(handle) {
     await renderTree();
   });
   showHome();
+  await restoreSavedLocation();   // 새로고침이면 보던 화면 · 탭 · 항목으로 (페이지마다 한 번 — session-location.js)
 }
 
 /** 현황(대시보드)으로 가기 — 등록 안 한 변경이 있으면 먼저 확인 */
@@ -209,7 +210,7 @@ async function renderTree() {
   if (!hasVisible) {
     const empty = document.createElement('li');
     empty.className = 'nohit';
-    empty.textContent = isFiltering() ? '조건에 맞는 화면이 없습니다.' : '아직 메뉴가 없습니다. 이곳을 우클릭해 메뉴를 추가하세요.';
+    empty.textContent = isFiltering() ? '조건에 맞는 화면이 없습니다.' : '아직 파일이 없습니다. 이곳을 우클릭해 폴더나 파일을 추가하세요.';
     items.push(empty);
   }
   tree.replaceChildren(...items);
@@ -256,12 +257,16 @@ function showFolderMenu(position, target) {
       ['파일 추가', () => addSubMenu(target), '', MENU_ICON.pageAdd]
     );
   }
-  items.push(['탐색기 경로 복사', () => copyFolderPath(target), '', MENU_ICON.clipboard]);
+  items.push(
+    ['이름 복사', () => copyTreeName(target), '', MENU_ICON.clipboard],
+    ['탐색기 경로 복사', () => copyFolderPath(target), '', MENU_ICON.clipboard]
+  );
   if (target.parent) {
-    // 복사는 화면(메뉴)만. 폴더는 묶음이라 통째로 복제할 일이 없고, 이동 이름도 '폴더 이동'으로 구분합니다.
-    if (target.isScreen) items.push(['메뉴 복사', () => openMoveDialog(target, 'copy'), '', MENU_ICON.copy]);
+    // 복사는 화면(파일)만. 폴더는 묶음이라 통째로 복제할 일이 없고, 이동 이름도 '파일 이동' / '폴더 이동'으로 구분합니다.
+    // 화면을 사용자에게는 '파일'로 부름 ([파일 추가]와 같은 말)
+    if (target.isScreen) items.push(['파일 복사', () => openMoveDialog(target, 'copy'), '', MENU_ICON.copy]);
     items.push(
-      [(target.isScreen ? '메뉴' : '폴더') + ' 이동', () => openMoveDialog(target, 'move'), '', MENU_ICON.move],
+      [(target.isScreen ? '파일' : '폴더') + ' 이동', () => openMoveDialog(target, 'move'), '', MENU_ICON.move],
       ['이름 변경', () => renameMenuFolder(target), '', MENU_ICON.rename],
       ['삭제', () => deleteMenuFolder(target), 'danger', MENU_ICON.trash]
     );
@@ -283,7 +288,7 @@ async function addSubFolder(target) {
     label: '폴더 이름',
     okText: '추가',
     hint: '폴더는 메뉴를 묶어 두는 칸입니다. 본문에 입력하는 화면이 없고, 눌러도 열고 닫기만 합니다.'
-      + ' 특수문자 \\ / : * ? " < > | 와 asis, tobe 같은 예약어는 쓸 수 없습니다.',
+      + ' 특수문자 \\ / : * ? " < > | , 끝의 점(.) · 공백, asis · tobe 같은 예약어는 쓸 수 없습니다.',
     validate: name => !name ? '이름을 입력하세요.' : validateFolderName(name)
   });
   if (!answer) return;
@@ -312,7 +317,7 @@ async function addSubMenu(target) {
     label: '파일(화면) 이름',
     okText: '추가',
     hint: '본문에서 SQL·파일·정의서를 입력하는 화면이 만들어집니다. 묶음만 필요하면 ‘하위 폴더 추가’를 쓰세요.'
-      + ' 특수문자 \\ / : * ? " < > | 와 asis, tobe 같은 예약어는 쓸 수 없습니다.',
+      + ' 특수문자 \\ / : * ? " < > | , 끝의 점(.) · 공백, asis · tobe 같은 예약어는 쓸 수 없습니다.',
     choices: {label: '화면 종류', options: SCREEN_KIND_CHOICES, required: true, requiredMessage: '화면 종류(기존 화면 변경 / 신규 화면)를 골라 주세요.'},   // 기본값 없이 — 무심코 기존 화면으로 만들지 않게 꼭 고르게 함
     check: '만든 뒤 바로 열기',
     checked: true,
@@ -321,7 +326,7 @@ async function addSubMenu(target) {
   if (!answer) return;
   if (await hasSubDir(target.dir, answer.value)) return toast('같은 이름의 폴더가 이미 있습니다.');
   try {
-    await withBusy('메뉴를 만드는 중…', async () => {
+    await withBusy('파일을 만드는 중…', async () => {
       const seq = await openTicketSequence(app.root);
       const ticket = nextTicket(seq);
       const newDir = await target.dir.getDirectoryHandle(answer.value, {create: true});
@@ -390,7 +395,8 @@ async function relocateFolder(target, destParent, newName) {
  * 실수를 막기 위해 이름을 그대로 입력해야 지울 수 있습니다.
  */
 async function deleteMenuFolder(target) {
-  const kindName = target.isScreen ? '메뉴' : '폴더';
+  const kindName = target.isScreen ? '파일' : '폴더';
+  const kindObject = target.isScreen ? '파일을' : '폴더를';   // 조사가 달라 따로 둠
   let screenCount = 0;
   try {
     screenCount = (await findAllScreens(target.dir)).length + (target.isScreen ? 1 : 0);
@@ -398,8 +404,8 @@ async function deleteMenuFolder(target) {
     return toastError('삭제 실패', error);
   }
   const contents = target.isScreen
-    ? (screenCount > 1 ? `이 메뉴와 그 안의 메뉴 ${screenCount - 1}개` : '이 메뉴')
-    : (screenCount ? `이 폴더와 그 안의 메뉴 ${screenCount}개` : '이 폴더와 그 안의 모든 것');
+    ? (screenCount > 1 ? `이 파일과 그 안의 파일 ${screenCount - 1}개` : '이 파일')
+    : (screenCount ? `이 폴더와 그 안의 파일 ${screenCount}개` : '이 폴더와 그 안의 모든 것');
   const answer = await askText({
     title: `${kindName} 영구 삭제`,
     desc: `⚠ 삭제하면 되돌릴 수 없습니다. 휴지통에도 남지 않습니다.
@@ -416,7 +422,7 @@ async function deleteMenuFolder(target) {
   });
   if (!answer) return;
   try {
-    await withBusy(`${kindName}를 지우는 중…`, async () => {
+    await withBusy(`${kindObject} 지우는 중…`, async () => {
       await target.parent.removeEntry(target.name, {recursive: true});
       await removeFromFolderOrder(target.parent, target.name);
       // 지운 폴더(또는 그 아래)의 화면을 보고 있었다면 현황으로 (등록 안 된 변경도 함께 지워진 것이므로 묻지 않음)
@@ -426,7 +432,7 @@ async function deleteMenuFolder(target) {
       }
       await renderTree();
     });
-    toast(`‘${target.name}’ ${kindName}를 삭제했습니다.`);
+    toast(`‘${target.name}’ ${kindObject} 삭제했습니다.`);
   } catch (error) {
     toastError('삭제 실패', error);
   }
@@ -453,7 +459,7 @@ async function renameMenuFolder(target) {
   }
 }
 
-/* ======================= 메뉴 복사 ======================= */
+/* ======================= 파일(화면) 복사 ======================= */
 
 /* 복사한 폴더 이름 뒤에 붙이는 말. 같은 이름이 또 있으면 _COPY2, _COPY3 … 으로 늘립니다. */
 const COPY_NAME_SUFFIX = '_COPY';
@@ -502,6 +508,24 @@ async function resetCopiedWorkLog(dir) {
   for (const name of await listChildFolders(dir)) await resetCopiedWorkLog(await dir.getDirectoryHandle(name));
 }
 
+/** 복사본 화면 이력의 글 — 어느 화면(경로 · 원래 티켓)에서 복사했는지 */
+const copyLogText = (sourcePath, ticket) => `‘${sourcePath.join(' / ')}’${ticket ? ` (티켓 ${ticket})` : ''}에서 복사해 만듦`;
+
+/**
+ * 복사본(하위 포함)의 모든 화면에 '어디서 복사했는지' 화면 이력을 남김 — 항목 이력의 [화면]에 보임
+ * 작업 기록을 지웠든(resetCopiedWorkLog 뒤) 그대로 두었든 남기며, 새 티켓을 붙이기 전에 불러야 원래 티켓이 적힙니다.
+ * 쓴 사람은 비움 (트리에서 복사하므로 열린 화면의 작업자와 상관없음 — 신규 화면을 만들 때와 같음)
+ * @param {string[]} sourcePath 복사한 원래 폴더의 경로
+ */
+async function addCopyLogs(newDir, sourcePath) {
+  const at = new Date().toISOString();
+  const withCopyLog = (meta, path) =>
+    ({...meta, activityLog: [...(meta.activityLog || []), {at, by: '', text: copyLogText(path, meta.ticket), source: 'system'}]});
+  const ownMeta = await readJson(newDir, 'meta.json', null);
+  if (ownMeta) await writeJson(newDir, 'meta.json', withCopyLog(ownMeta, sourcePath));
+  for (const {dir, path, meta} of await findAllScreens(newDir)) await writeJson(dir, 'meta.json', withCopyLog(meta, [...sourcePath, ...path]));
+}
+
 /**
  * 폴더를 다른 위치에 복사 (실패하면 만든 폴더를 지워 원래 상태로 되돌림)
  * @param {{dir, name}} target 복사할 폴더
@@ -516,6 +540,7 @@ async function copyMenuFolder(target, destParent, newName, keepWorkLog) {
   try {
     await copyDirectory(target.dir, newDir);
     if (!keepWorkLog) await resetCopiedWorkLog(newDir);
+    await addCopyLogs(newDir, target.path);   // 새 티켓을 붙이기 전에 — 원래 화면의 티켓을 적음
     await assignNewTickets(newDir, seq);
     await saveTicketSequence(seq);
   } catch (error) {
@@ -525,16 +550,16 @@ async function copyMenuFolder(target, destParent, newName, keepWorkLog) {
   await appendToFolderOrder(destParent, newName);   // 복사본은 맨 뒤 (안의 순서는 순서 파일이 함께 복사되어 그대로)
 }
 
-/** 메뉴 복사 창의 [복사] — 열어 둔 화면은 그대로 두므로 이동 확인을 받지 않습니다 */
+/** 파일 복사 창의 [복사] — 열어 둔 화면은 그대로 두므로 이동 확인을 받지 않습니다 */
 async function copySelectedMenu(target, destination) {
   const newName = await uniqueCopyName(destination.dir, target.name);
   if (!newName) return toast(`쓸 수 있는 복사 이름이 없습니다. ${COPY_NAME_SUFFIX} 폴더를 정리해 주세요.`);
   const keepWorkLog = $('#mvKeep').checked;
   $('#moveModal').hidden = true;
   try {
-    await withBusy('메뉴를 복사하는 중…', async () => {
+    await withBusy('파일을 복사하는 중…', async () => {
       await copyMenuFolder(target, destination.dir, newName, keepWorkLog);
-      treeState.closedKeys.delete(destination.path.join('/'));   // 복사한 메뉴가 보이도록 상위 폴더를 펼침
+      treeState.closedKeys.delete(destination.path.join('/'));   // 복사한 파일이 보이도록 상위 폴더를 펼침
       await renderTree();
     });
     toast(`"${newName}" 으로 복사했습니다.`);
@@ -552,13 +577,13 @@ const MOVE_DIALOG_TEXT = {
     title: noun => noun + ' 이동',
     info: (noun, name) => noun === '폴더'
       ? `"${name}" 폴더를 하위 내용과 함께 옮길 위치를 선택하세요.`
-      : `"${name}" 메뉴를 옮길 위치를 선택하세요.`,
+      : `"${name}" 파일을 옮길 위치를 선택하세요.`,
     pick: '이동할 위치를 선택하세요.', picked: '이동 위치: '
   },
   copy: {
     okText: '복사',
-    title: () => '메뉴 복사',
-    info: (noun, name) => `"${name}" 메뉴를 복사할 위치를 선택하세요. 이름 뒤에 ${COPY_NAME_SUFFIX} 가 붙습니다.`,
+    title: () => '파일 복사',
+    info: (noun, name) => `"${name}" 파일을 복사할 위치를 선택하세요. 이름 뒤에 ${COPY_NAME_SUFFIX} 가 붙습니다.`,
     pick: '복사할 위치를 선택하세요.', picked: '복사 위치: '
   }
 };
@@ -597,7 +622,7 @@ async function openMoveDialog(target, mode = 'move') {
   const list = $('#mvList');
   moveState = {target, destination: null, mode};
   list.innerHTML = '';
-  const noun = target.isScreen ? '메뉴' : '폴더';
+  const noun = target.isScreen ? '파일' : '폴더';
   $('#mvTitle').textContent = text.title(noun);
   $('#mvOk').textContent = text.okText;
   $('#mvInfo').textContent = text.info(noun, target.name);
@@ -643,7 +668,7 @@ async function confirmMove() {
   if (!(await confirmLeaveScreen())) return;
   $('#moveModal').hidden = true;
   try {
-    await withBusy('메뉴를 옮기는 중…', () => relocateFolder(target, destination.dir, target.name));
+    await withBusy(target.isScreen ? '파일을 옮기는 중…' : '폴더를 옮기는 중…', () => relocateFolder(target, destination.dir, target.name));
     toast('이동했습니다.');
   } catch (error) {
     toastError('이동 실패', error);
@@ -682,6 +707,20 @@ async function copyFolderPath(target, resetRootPath) {
   } catch {
     // 클립보드를 쓸 수 없으면 직접 복사하도록 보여 줌
     await askText({title: '폴더 경로', desc: '아래 경로를 복사(Ctrl+C)해 탐색기 주소창에 붙여넣으세요.', label: '경로', value: fullPath, readonly: true, mono: true, okText: '닫기', noCancel: true});
+  }
+}
+
+/**
+ * [이름 복사] — 트리에 보이는 이름 글자 그대로 복사 (예: '개인회원정보'). 루트는 프로젝트 이름
+ * 클립보드를 쓸 수 없으면 창에 보여 줘 직접 복사하게 함 (탐색기 경로 복사와 같은 방식)
+ */
+async function copyTreeName(target) {
+  const name = target.parent ? target.name : rootLabel();
+  try {
+    await navigator.clipboard.writeText(name);
+    toast(`‘${name}’ 이름을 복사했습니다.`);
+  } catch {
+    await askText({title: '이름', desc: '아래 이름을 복사(Ctrl+C)해 쓰세요.', label: '이름', value: name, readonly: true, okText: '닫기', noCancel: true});
   }
 }
 

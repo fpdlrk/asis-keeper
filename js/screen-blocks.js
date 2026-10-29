@@ -61,6 +61,40 @@ function forceUpperCaseTitle(input) {
   input.setSelectionRange(selectionStart, selectionEnd);
 }
 
+/* ======================= 추가 창의 이름 규칙 =======================
+   SQL · 서비스 · 오브젝트 · 공통코드관리 · ENTITY 추가 창의 이름: 영문 · 숫자 · 밑줄(_)만, 영문은 언제나 대문자 */
+
+/* 이름에 쓸 수 없는 글자 (대문자로 바꾼 뒤 기준 — 한글 · 공백 · 그 밖의 특수문자) */
+const ADD_NAME_DISALLOWED = /[^A-Z0-9_]/g;
+/* 쓸 수 없는 글자를 지웠을 때 · 이름 칸 아래 안내 */
+const ADD_NAME_RULE_TEXT = '이름은 영문 · 숫자 · 밑줄(_)만 쓸 수 있습니다. 영문은 대문자로 바뀝니다.';
+
+/** 추가 창 이름 값으로: 대문자로 바꾸고 쓸 수 없는 글자는 뺌 */
+const toAddItemName = value => String(value || '').toUpperCase().replace(ADD_NAME_DISALLOWED, '');
+
+/**
+ * 추가 창의 이름 칸에 규칙 걸기 — 입력할 때마다 대문자로, 쓸 수 없는 글자는 지우고 오류 칸에 안내
+ * 한글 입력(조합) 중에는 건드리지 않고 조합이 끝나면 정리합니다 (조합 중에 값을 바꾸면 글자가 깨짐).
+ * 창을 닫을 때 input.oninput · input.oncompositionend 를 null 로 풀어 주세요.
+ * @param {HTMLElement} errorBox 그 창의 오류 칸
+ */
+function bindAddNameInput(input, errorBox) {
+  const apply = () => {
+    const cleaned = toAddItemName(input.value);
+    if (cleaned === input.value) return;
+    const removed = cleaned.length < input.value.length;
+    const caret = toAddItemName(input.value.slice(0, input.selectionStart)).length;   // 지운 글자만큼 커서를 당김
+    input.value = cleaned;
+    input.setSelectionRange(caret, caret);
+    if (removed) {
+      errorBox.textContent = ADD_NAME_RULE_TEXT;
+      errorBox.hidden = false;
+    }
+  };
+  input.oninput = e => { if (!e.isComposing) apply(); };
+  input.oncompositionend = apply;
+}
+
 /**
  * 화면에 있는 블록을 순서대로 읽기 (제목·SQL 은 지금 입력된 값)
  * @returns {{id, element, title, sql, asisId}[]} asisId 는 신규 블록에만 (findPairedAsisBlock 용)

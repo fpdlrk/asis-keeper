@@ -401,8 +401,8 @@ function screenPanelsHtml(meta) {
         <div id="blocks-asis" class="blocks${locked ? ' locked' : ''}">${screen.blocks.asis.map(block => sqlBlockHtml('asis', block, locked)).join('')}</div>
       </div>
       <div class="layer" data-layer="tobe"${locked ? '' : ' hidden'}>
-        ${isNewScreen(meta) ? '' : `<div class="toolbar"><span class="muted">신규 SQL 마다 왼쪽에 원본을 나란히 보여 주고 바뀐 줄을 색칠합니다.</span><span class="sp"></span>
-          ${ignoreFormatToggleHtml()}</div>`}<!-- 신규 화면은 비교할 원본이 없어 안내 · 공백·대소문자 무시를 빼고 그림 -->
+        ${isNewScreen(meta) ? '' /* 신규 화면은 비교할 원본이 없어 안내 · 공백·대소문자 무시를 빼고 그림 */ : `<div class="toolbar"><span class="muted">신규 SQL 마다 왼쪽에 원본을 나란히 보여 주고 바뀐 줄을 색칠합니다.</span><span class="sp"></span>
+          ${ignoreFormatToggleHtml()}</div>`}
         ${pillTabsBarHtml('tobe')}
         <div id="blocks-tobe" class="blocks">${screen.blocks.tobe.map(block => sqlBlockHtml('tobe', block, false)).join('')}</div>
         <div id="gone-tobe" class="blocks"></div>

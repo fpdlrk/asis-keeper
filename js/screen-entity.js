@@ -345,10 +345,13 @@ async function lockEntity(id) {
     okText: reopened ? '다시 잠그기' : '등록 후 잠그기'
   });
   if (!ok || !(await saveDirtySections())) return;
+  let sync = {synced: [], skipped: []};
   try {
     await withBusy('ENTITY 원본을 잠그는 중…', async () => {
       const copied = !record.tobe;
       if (copied) record.tobe = copyEntityLayer(record.asis);
+      else if (reopened) sync = syncEntityOriginal(record);   // 잠금을 푼 동안 고친 원본 → 신규에서 손대지 않은 칸에
+      delete record.unlockBase;
       record.locked = true;
       if (!record.savedAt) record.savedAt = new Date().toLocaleString('ko-KR');
       record.hash = await entityOriginalHash(record);
@@ -363,6 +366,26 @@ async function lockEntity(id) {
   rerenderEntityPanel();
   activateEntityTab(id);
   toast('ENTITY 원본을 잠갔습니다. 이제 신규를 고칩니다.');
+  if (reopened) await showOriginalSyncResult('ENTITY', sync);
+}
+
+/**
+ * 다시 잠글 때 고친 원본을 신규에 반영 (규칙은 original-sync.js) — 기준(unlockBase)이 없으면 잠긴 동안 신규를 고친 적이 없을 때만 통째로
+ * @returns {{synced: string[], skipped: string[]}}
+ */
+function syncEntityOriginal(record) {
+  const outcome = record.unlockBase
+    ? mergeDefItemWithOriginal('entity', record.unlockBase, record.asis, record.tobe)
+    : replaceIfUntouched(record.tobe, copyEntityLayer(record.asis),
+      diffDefItem('entity', record.tobe, record.asis).state !== 'same', wasEntityEditedWhileLocked(record.log));
+  const title = entityRecordTitle(record);
+  if (outcome.changed) {
+    const before = record.tobe;
+    const {title: newTitle, info, grids, rowIds} = outcome.item;
+    record.tobe = {title: newTitle, info, grids, rowIds};
+    appendSystemLog(record, syncLogText(defChangeLogText('entity', before, record.tobe)));
+  }
+  return {synced: outcome.changed ? [title] : [], skipped: outcome.conflict ? [title] : []};
 }
 
 /** ENTITY 잠금 풀기 — 사유 필수, 이력에 남김 */
@@ -385,6 +408,7 @@ async function unlockEntity(id) {
   try {
     await withBusy('잠금을 푸는 중…', async () => {
       record.locked = false;
+      record.unlockBase = copyEntityLayer(record.asis);   // 다시 잠글 때 신규에 반영할 기준
       record.unlockLog = [...record.unlockLog, {at: new Date().toISOString(), by: currentWorkerName(), reason: answer.value, relockedAt: ''}];
       appendSystemLog(record, `잠금 풀기 (사유: ${answer.value})`);
       await saveEntities(app.root, app.screen.entities);

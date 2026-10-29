@@ -8,6 +8,7 @@
      locked      : 원본이 잠겼는지 — 잠그면 원본을 신규로 복사하고, 이후 신규를 고침 (ENTITY 마다 따로)
      savedAt     : 처음 잠근 시각 · hash: 잠글 때 원본 해시 (원본 확인)
      unlockLog   : 잠금 해제 이력 [{at, by, reason, relockedAt}] · log: 이력 [{at, by, text, source}]
+     unlockBase  : 잠금을 풀 때의 원본 (다시 잠글 때 고친 원본을 신규에 반영하는 기준 — original-sync.js). 잠겨 있으면 없음
    서비스는 항목의 entityIds 로 ENTITY 를 가리킵니다 (screen-entity-links.js).
    ========================================================================== */
 
@@ -33,6 +34,7 @@ const normalizeEntity = raw => ({
   savedAt: raw.savedAt || '',
   hash: raw.hash || '',
   unlockLog: raw.unlockLog || [],
+  unlockBase: normalizeEntityLayer(raw.unlockBase),
   log: raw.log || []
 });
 
@@ -56,6 +58,7 @@ const storedEntity = record => ({
   ...(record.savedAt ? {savedAt: record.savedAt} : {}),
   ...(record.hash ? {hash: record.hash} : {}),
   ...(record.unlockLog.length ? {unlockLog: record.unlockLog} : {}),
+  ...(record.unlockBase ? {unlockBase: storedEntityLayer(record.unlockBase)} : {}),
   ...(record.log.length ? {log: record.log} : {})
 });
 

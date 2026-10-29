@@ -372,7 +372,6 @@ input:disabled, select:disabled, textarea:disabled { color: var(--disabled); -we
 /* 원본 대비 상태 (신규 단계): 이름 뒤의 작은 글자 · 삭제된 원본 항목 탭은 취소선 */
 .sqltab-st { flex: none; margin-left: 5px; font-style: normal; font-size: 11px; font-weight: 700; }
 .sqltab-st:empty { display: none; }
-.sqltab[data-st="changed"] .sqltab-st { color: var(--warn); }
 /* 신규(원본 없음): 빨간 동그라미 안의 흰 N — 탭 왼쪽 위 가장자리에 겹쳐 띄움(absolute). 탭 안 글자 줄에 끼지 않아 탭 높이 · 모양이 다른 탭과 같음 */
 .sqltab { position: relative; }
 .sqltab[data-st="new"] .sqltab-st, .sqltab.on[data-st="new"] .sqltab-st { position: absolute; top: -4px; left: -4px; z-index: 1;

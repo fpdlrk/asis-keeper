@@ -7,6 +7,7 @@
      [원본 등록 후 잠그기]: 바뀐 내용을 모두 등록 → 그 탭에서 아직 신규 쪽에 없는 원본 항목을 신규로 복사 → 해시 기록 → 잠금
      신규 단계(잠근 뒤): 그 탭에서 신규를 고침. 원본과 다른 곳은 screen-changes.js 가 표시
      [잠금 풀기]: 사유를 받아 그 탭의 이력에 남기고 원본 단계로 (신규 작업 내용은 그대로 보관)
+                 이때의 원본을 기준으로 기억해 둠(unlockBase) → 다시 잠글 때 고친 원본을 신규에서 손대지 않은 칸에 반영 (original-sync.js)
    잠그거나 풀면 화면 전체를 다시 그립니다 — 단계마다 보이는 쪽과 고칠 수 있는 칸이 다르기 때문입니다.
    안내 띠와 단추는 각 탭 맨 위에 있습니다 (tabPhaseHtml).
    ========================================================================== */
@@ -109,6 +110,109 @@ async function copyNewOriginalsToTobe(dir, meta, tab, lock) {
   meta.sqlBlocks = {...(meta.sqlBlocks || {}), tobe: tobeList};
 }
 
+/**
+ * 잠금을 풀 때의 원본 (다시 잠글 때 '신규에서 손대지 않은 칸'을 가리는 기준 — 잠금 정보의 unlockBase 로 meta.json 에 저장)
+ *   정의서: 항목의 내용(제목 · 정의 칸 · 표 · ENTITY 연결) / SQL: 블록의 제목 · 본문 · 정의 칸 · 파라미터
+ */
+async function originalSnapshotOf(dir, meta, tab) {
+  if (tab !== 'sql') {
+    return (await loadDefLayers(dir, tab, false)).asis
+      .map(item => cloneJson({id: item.id, title: item.title, info: item.info, grids: item.grids, rowIds: item.rowIds, entityIds: item.entityIds || []}));
+  }
+  return (await loadSqlBlocks(dir, meta, 'asis'))
+    .map(block => cloneJson({id: block.id, title: block.title, sql: block.sql, info: block.info || {}, params: block.params || [], paramIds: block.paramIds || []}));
+}
+
+/**
+ * 다시 잠글 때: 잠금을 푼 동안 고친 원본을 짝인 신규 항목에 반영 (규칙은 original-sync.js 머리 설명)
+ * 원본 저장 · 새 원본 복사(copyNewOriginalsToTobe)가 끝난 뒤 부릅니다. SQL 은 meta.sqlBlocks 를 고치므로 부른 쪽이 saveMeta
+ * @param {object} lock 잠그기 전의 그 탭 잠금 정보 (unlockBase 가 없으면 예전에 푼 잠금 — 신규에서 고친 기록으로 가림)
+ * @returns {Promise<{synced: string[], skipped: string[]}>} 반영한 항목 이름 / 신규에서 따로 고쳐 다 반영하지 못한 항목 이름
+ */
+async function syncEditedOriginalsToTobe(dir, meta, tab, lock) {
+  const base = Array.isArray(lock.unlockBase) ? new Map(lock.unlockBase.map(item => [item.id, item])) : null;
+  const result = {synced: [], skipped: []};
+  const record = (title, outcome) => {
+    if (outcome.changed) result.synced.push(title);
+    if (outcome.conflict) result.skipped.push(title);
+  };
+
+  if (tab !== 'sql') {
+    const {asis, tobe} = await loadDefLayers(dir, tab, false);
+    const asisById = new Map(asis.map(item => [item.id, item]));
+    const merged = tobe.map(item => {
+      const now = item.asisId ? asisById.get(item.asisId) : null;
+      if (!now || (base && !base.has(now.id))) return item;   // 짝 없음 · 이번에 새로 넣은 원본(방금 복사됨)
+      const outcome = base
+        ? mergeDefItemWithOriginal(tab, base.get(now.id), now, item)
+        : replaceDefItemWithOriginal(tab, now, item);
+      record(item.title || UNNAMED_DEF_TITLE, outcome);
+      if (outcome.changed) appendSystemLog(outcome.item, syncLogText(defChangeLogText(tab, item, outcome.item)));
+      return outcome.item;
+    });
+    if (result.synced.length) await writeJson(dir, defLayerFile(tab, 'tobe'), merged.map(storedDefItem));
+    return result;
+  }
+
+  if (!meta.sqlBlocks) return result;
+  const asisBlocks = await loadSqlBlocks(dir, meta, 'asis');
+  const tobeList = [];
+  for (const [order, entry] of (meta.sqlBlocks.tobe || []).entries()) {
+    const now = findPairedAsisBlock(entry, order, asisBlocks);
+    if (!now || (base && !base.has(now.id))) { tobeList.push(entry); continue; }
+    const current = {title: entry.title, sql: (await readText(dir, entry.file)) || '', info: entry.info || {}, params: entry.params || [], paramIds: entry.paramIds || []};
+    const outcome = base
+      ? mergeSqlBlockWithOriginal(base.get(now.id), now, current)
+      : replaceSqlBlockWithOriginal(now, current, entry.log);
+    record(entry.title, outcome);
+    if (!outcome.changed) { tobeList.push(entry); continue; }
+    const after = outcome.block;
+    if (!sameSqlText(after.sql, current.sql)) await writeFile(dir, entry.file, after.sql);
+    const {info: _info, params: _params, paramIds: _paramIds, ...rest} = entry;   // 정의 · 파라미터는 반영한 값으로 다시 씀
+    const updated = {...rest, title: after.title, ...sqlDefinitionOf(after)};
+    appendSystemLog(updated, syncLogText(sqlChangeLogText(sqlLogShape(entry.asisId, current), sqlLogShape(entry.asisId, after))));
+    tobeList.push(updated);
+  }
+  meta.sqlBlocks = {...meta.sqlBlocks, tobe: tobeList};
+  return result;
+}
+
+/** 수정 이력 글(sqlChangeLogText)이 받는 모양 */
+const sqlLogShape = (asisId, block) => ({title: block.title, asisId, sql: block.sql,
+  definition: {info: block.info, params: block.params, paramIds: block.paramIds}});
+
+/** 기준이 없을 때(예전에 푼 잠금) 정의서 항목: 신규에서 고친 적이 없으면 원본 내용으로 */
+function replaceDefItemWithOriginal(tab, now, tobe) {
+  const replaced = {...tobe, title: now.title, info: cloneJson(now.info || {}), grids: cloneJson(now.grids), rowIds: cloneJson(now.rowIds),
+    ...(defConfigOf(tab).entityLinks ? {entityIds: [...(now.entityIds || [])]} : {})};
+  return replaceIfUntouched(tobe, replaced, diffDefItem(tab, tobe, replaced).state !== 'same', wasEditedInTobe(tobe.log));
+}
+
+/** 기준이 없을 때(예전에 푼 잠금) SQL 블록: 신규에서 고친 적이 없으면 원본 내용으로 */
+function replaceSqlBlockWithOriginal(now, current, log) {
+  const replaced = cloneJson({title: now.title, sql: now.sql, info: now.info || {}, params: now.params || [], paramIds: rowIdsOf(now.params || [], now.paramIds)});
+  const differs = sqlChangeLogText(sqlLogShape('', current), sqlLogShape('', replaced)) !== '';
+  const outcome = replaceIfUntouched(current, replaced, differs, wasEditedInTobe(log));
+  return {block: outcome.item, changed: outcome.changed, conflict: outcome.conflict};
+}
+
+/**
+ * 다시 잠근 뒤 알림 — 반영한 것은 알림(toast)으로, 다 반영하지 못한 것은 창으로 (무엇을 확인할지 남도록)
+ * @param {string} where 탭 이름 또는 'ENTITY'
+ */
+async function showOriginalSyncResult(where, sync) {
+  if (sync.synced.length) toast(`고친 원본을 ${where} 신규 ${sync.synced.length}개 항목에 반영했습니다.`);
+  if (!sync.skipped.length) return;
+  await askConfirm({
+    title: '신규에 다 반영하지 못한 원본 변경',
+    desc: '잠금을 푼 동안 원본을 고쳤지만, 같은 곳을 신규에서도 따로 고쳐 신규 값을 그대로 두었습니다.\n'
+      + '원본과 다른 곳은 색으로 표시되니 확인하고 필요하면 신규를 직접 맞춰 주세요.\n\n'
+      + sync.skipped.map(title => '· ' + title).join('\n'),
+    okText: '확인',
+    noCancel: true
+  });
+}
+
 /** 그 탭의 지금 원본 항목 id (다음에 다시 잠글 때 비교용 — lockedIds) */
 async function originalIdsOf(dir, meta, tab) {
   if (tab === 'sql') return ((meta.sqlBlocks && meta.sqlBlocks.asis) || []).map(block => block.id);
@@ -159,21 +263,23 @@ async function lockTab(tab) {
   const ok = await askConfirm({
     title: `${label} ${reopened ? '고친 원본 다시 잠그기' : '원본 등록 후 잠그기'}`,
     desc: (reopened
-      ? `다시 잠그면 지금 ${label} 원본이 새 기준이 되고, 고칠 수 없습니다.\n잠금을 푼 동안 새로 넣은 원본 항목은 신규 쪽에도 복사됩니다.\n잠금을 풀 때 남긴 사유는 이력에 그대로 남습니다.`
+      ? `다시 잠그면 지금 ${label} 원본이 새 기준이 되고, 고칠 수 없습니다.\n잠금을 푼 동안 새로 넣은 원본 항목은 신규 쪽에도 복사되고,\n고친 원본 내용은 신규에서 손대지 않은 칸에 반영됩니다.\n잠금을 풀 때 남긴 사유는 이력에 그대로 남습니다.`
       : `${label} 탭의 원본을 등록하고 잠급니다. 잠근 뒤에는 원본을 고칠 수 없습니다.\n원본은 신규 쪽으로 복사되고, 이후 신규를 고치면 원본과 다른 곳이 표시됩니다.`)
       + '\n등록하지 않은 다른 변경도 함께 등록됩니다. 계속할까요?',
     okText: reopened ? '다시 잠그기' : '등록 후 잠그기'
   });
   if (!ok) return;
 
+  let sync = {synced: [], skipped: []};
   try {
     await withBusy(`${label} 원본을 등록하고 잠그는 중…`, async () => {
       const {dir, meta} = screen;
       // 1) 바뀐 내용 등록 (화면을 다시 그리면 사라지므로) + 이 탭의 원본은 바뀌지 않았어도 지금 모양으로 다시 저장
       await saveSections(SAVE_SECTIONS.map(([section]) => section).filter(section => section !== tab && isDirty(section)));
       await saveOriginalOf(tab);
-      // 2) 새로 넣은 원본을 신규 쪽으로 복사
+      // 2) 새로 넣은 원본을 신규 쪽으로 복사 + 다시 잠그면 고친 원본을 신규에서 손대지 않은 칸에 반영
       await copyNewOriginalsToTobe(dir, meta, tab, lock);
+      if (reopened) sync = await syncEditedOriginalsToTobe(dir, meta, tab, lock);
       // 3) 해시 · 잠금 정보 저장. 다시 잠근 경우 마지막 해제 이력에 '다시 잠근 시각'을 적음
       setTabLock(meta, tab, {
         locked: true,
@@ -191,6 +297,7 @@ async function lockTab(tab) {
   }
   await openScreen(screen.path, true);   // 이 탭을 신규 단계 화면으로 다시 그림
   toast(reopened ? `고친 ${label} 원본을 다시 잠갔습니다.` : `${label} 원본을 등록하고 잠갔습니다. 이제 이 탭은 신규 작업을 합니다.`);
+  if (reopened) await showOriginalSyncResult(label, sync);
 }
 
 /* ======================= 잠금 풀기 ======================= */
@@ -234,6 +341,7 @@ async function unlockTab(tab) {
       setTabLock(screen.meta, tab, {
         ...lock,
         locked: false,
+        unlockBase: await originalSnapshotOf(screen.dir, screen.meta, tab),   // 다시 잠글 때 신규에 반영할 기준 (다시 잠그면 지워짐)
         unlockLog: [...lock.unlockLog, {at: new Date().toISOString(), by: currentWorkerName(), reason: answer.value, relockedAt: ''}]
       });
       addActivityLog(screen.meta, `${label} 잠금 풀기 (사유: ${answer.value})`);

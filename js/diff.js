@@ -74,14 +74,15 @@ const diffCellHtml = text => (text === undefined || text === '') ? '&nbsp;' : es
  * 변경 전/후 나란히 보기 표 HTML
  * 바뀐 곳 앞뒤 DIFF_CONTEXT_LINES 줄만 보여 주고, 나머지 같은 줄은 접습니다.
  * @param {boolean} [ignoreFormat] 공백·대소문자 차이 무시. 기본은 화면의 옵션(app.ignoreFormat). 보고서는 false 로 부름
+ * @param {string} [originalName] 안내 글에서 변경 전을 부르는 이름 — 앱은 '원본', 보고서는 'ASIS'(REPORT_ORIGINAL_NAME)
  */
-function sideBySideHtml(before, after, ignoreFormat = app.ignoreFormat) {
+function sideBySideHtml(before, after, ignoreFormat = app.ignoreFormat, originalName = '원본') {
   before = normalizeLineBreaks(before);
   after = normalizeLineBreaks(after);
-  if (before === after) return '<p class="note">변경 없음 (원본과 동일)</p>';
+  if (before === after) return `<p class="note">변경 없음 (${originalName}과 동일)</p>`;
   if (ignoreFormat && isSameText(before, after, true)) return '<p class="note">변경 없음 (공백·줄바꿈·대소문자 차이만 있음)</p>';
   if (!before.trim()) return '<div class="cap">신규 등록</div><pre class="add">' + escapeHtml(after) + '</pre>';
-  if (!after.trim()) return '<div class="cap">신규 내용 없음 (원본 내용)</div><pre class="del">' + escapeHtml(before) + '</pre>';
+  if (!after.trim()) return `<div class="cap">신규 내용 없음 (${originalName} 내용)</div><pre class="del">` + escapeHtml(before) + '</pre>';
 
   const rows = diffLines(before.split('\n'), after.split('\n'), ignoreFormat);
   if (!rows) {   // 너무 커서 줄 비교를 못 하면 통째로 나란히

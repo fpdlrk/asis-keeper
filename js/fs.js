@@ -202,10 +202,17 @@ function validatePath(path) {
   return hasBadPart ? '사용할 수 없는 경로입니다: ' + path : '';
 }
 
-/** 메뉴(폴더) 이름 오류 문구 (문제 없으면 '') */
+/**
+ * 메뉴(폴더) 이름 오류 문구 (문제 없으면 '') — 이름이 곧 윈도우 폴더 이름이라 윈도우 규칙을 따름
+ * 이유마다 안내를 따로 둠 (어느 글자가 문제인지 바로 알 수 있게)
+ */
 function validateFolderName(name) {
-  const invalid = INVALID_NAME_CHARS.test(name) || name.startsWith('.') || RESERVED_FOLDER_NAMES.includes(name.toLowerCase());
-  return invalid ? '사용할 수 없는 이름입니다. (특수문자, asis/tobe/attach/service/object/code 불가)' : '';
+  if (INVALID_NAME_CHARS.test(name)) return '이 특수문자는 쓸 수 없습니다: \\ / : * ? " < > | (그 밖의 특수문자는 됩니다)';
+  if (name.startsWith('.')) return '점(.)으로 시작하는 이름은 쓸 수 없습니다.';
+  if (/[.\s]$/.test(name)) return '이름 끝에 점(.)이나 공백은 쓸 수 없습니다. (윈도우 폴더 이름 규칙)';
+  if (RESERVED_FOLDER_NAMES.includes(name.toLowerCase())) return `${RESERVED_FOLDER_NAMES.join(', ')} 는 앱이 쓰는 이름이라 쓸 수 없습니다.`;
+  if (WINDOWS_RESERVED_NAMES.test(name)) return 'CON, PRN, AUX, NUL, COM1~9, LPT1~9 는 윈도우가 쓰는 이름이라 쓸 수 없습니다.';
+  return '';
 }
 
 /** 경로의 파일 이름 부분 ("src/hr/emp.jsp" → "emp.jsp") */

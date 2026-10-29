@@ -31,6 +31,8 @@ const FOLDER_ORDER_FILE = '.order.json';
 const RESERVED_FOLDER_NAMES = ['asis', 'tobe', 'attach', 'service', 'object', 'code'];
 /* 윈도우 파일 이름에 쓸 수 없는 문자 */
 const INVALID_NAME_CHARS = /[\\/:*?"<>|]/;
+/* 윈도우가 장치 이름으로 쓰는 이름 — 폴더 이름으로 쓸 수 없음 (대소문자 무관, 'CON.txt' 처럼 뒤에 점이 붙어도 안 됨) */
+const WINDOWS_RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
 
 /* ---- 화면 폴더 안의 파일 위치 ---- */
 /* 파일 저장 구조 버전. 2 = asis/files, tobe/files 아래에 원본 경로 그대로 저장 (migrate.js 참고) */
